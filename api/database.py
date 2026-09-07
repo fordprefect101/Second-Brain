@@ -4,23 +4,20 @@ Deliberately small. Per ADR-003 there is no ORM: callers write SQL, and every qu
 is parameterised — never f-strings or % formatting, which is the one way hand-written
 SQL goes badly wrong.
 
-Runnable on its own so step 2 can be verified before FastAPI exists:
+Runnable on its own, to apply the schema without starting the API:
 
-    uv run python api/database.py
+    .venv/bin/python -m api.database
 """
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
 import psycopg
-from dotenv import load_dotenv
 
-load_dotenv()
+from api.config import config
 
-DATABASE_URL = os.getenv("DATABASE_URL")
 SCHEMA_PATH = Path(__file__).parent / "db" / "schema.sql"
 
 EXPECTED_TABLES = {
@@ -42,30 +39,19 @@ class DatabaseUnavailable(RuntimeError):
 
 
 def connect() -> psycopg.Connection:
-    """Open a connection. Caller is responsible for closing (use as a context manager)."""
-    if not DATABASE_URL:
-        raise DatabaseUnavailable(
-            "DATABASE_URL is not set. Copy .env.example to .env and fill it in."
-        )
+    """Open a connection. Caller is responsible for closing (use as a context manager).
+
+    DATABASE_URL is validated at import time by api.config, so by the time this runs
+    the only remaining failure is the database being unreachable.
+    """
     try:
-        return psycopg.connect(DATABASE_URL)
+        return psycopg.connect(config.database_url)
     except psycopg.OperationalError as exc:
         raise DatabaseUnavailable(
-            f"Cannot reach Postgres at {_safe_url()}.\n"
+            f"Cannot reach Postgres at {config.safe_database_url}.\n"
             f"Is the container running?  docker compose up -d\n"
             f"Underlying error: {exc}"
         ) from exc
-
-
-def _safe_url() -> str:
-    """DATABASE_URL with the password removed, so it is safe to log."""
-    if not DATABASE_URL:
-        return "(unset)"
-    if "@" not in DATABASE_URL:
-        return DATABASE_URL
-    scheme, _, rest = DATABASE_URL.partition("://")
-    _, _, host = rest.rpartition("@")
-    return f"{scheme}://***@{host}"
 
 
 def ensure_schema(conn: psycopg.Connection | None = None) -> None:
@@ -104,7 +90,7 @@ def list_tables(conn: psycopg.Connection) -> set[str]:
 
 
 def main() -> int:
-    print(f"Connecting to {_safe_url()}")
+    print(f"Connecting to {config.safe_database_url}")
     try:
         with connect() as conn:
             with conn.cursor() as cur:

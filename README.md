@@ -92,19 +92,36 @@ docker compose ps          # expect: personal-os-db, healthy
 uv venv --python 3.14
 uv pip install -r api/requirements.txt
 
-# 4. Apply the schema
-.venv/bin/python api/database.py
+# 4. Run the API — this applies the schema on startup
+.venv/bin/uvicorn api.main:app --reload
 ```
 
-Step 4 should print the Postgres version, `Schema applied.`, five tables marked `+`, and
-`Re-applied cleanly — schema is idempotent.` It applies the schema twice on purpose —
-idempotency is a claim, so it gets tested rather than asserted.
+Then check it:
+
+```bash
+curl -s localhost:8000/health | python3 -m json.tool
+```
+
+Expect `"status": "ok"`, the Postgres version, and all five tables listed. The health
+check actually reaches the database and returns **503** when it cannot — a check that
+returns 200 because the process is running tells you nothing you didn't already know by
+connecting to it.
+
+To apply the schema without starting the server:
+
+```bash
+.venv/bin/python -m api.database
+```
+
+That prints the five tables and then applies the schema a second time, because
+idempotency is a claim worth testing rather than asserting.
 
 ### Day to day
 
 ```bash
-docker compose up -d       # start the database
-docker compose stop        # stop it, keeping data
+docker compose up -d                        # start the database
+.venv/bin/uvicorn api.main:app --reload     # start the API on :8000
+docker compose stop                         # stop the database, keeping data
 ```
 
 ### Troubleshooting
@@ -142,8 +159,8 @@ in this project.
 |---|---|---|
 | 1 | Repo skeleton, docs tree, ADRs | done |
 | 2 | Docker Postgres, five-table schema, `ensure_schema()` | done |
-| 3 | FastAPI skeleton, health route, env config | next |
-| 4 | React/Vite shell with mock data | |
+| 3 | FastAPI skeleton, health route, env config | done |
+| 4 | React/Vite shell with mock data | next |
 | 5 | Capture end-to-end (raw `fetch`) → 5.5 TanStack Query comparison | |
 | 6 | *Learn:* markdown-as-data, filesystem safety | |
 | 7 | `NoteService` + `ObsidianVaultProvider` (list/read) | |
@@ -160,6 +177,8 @@ an additional layer; the system stays useful with all of it disabled.
 
 ```text
 api/
+  main.py          FastAPI app, lifespan, /health
+  config.py        env config, validated at import
   database.py      connection handling + idempotent ensure_schema()
   db/schema.sql    the five tables
   requirements.txt

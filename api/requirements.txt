@@ -1,6 +1,10 @@
-# Step 2 — database only. FastAPI and the rest arrive at step 3.
 # Pinned exactly, as in the prior project: a local tool that breaks because a
 # transitive dependency moved is a bad way to spend an evening.
 
+# Step 2 — database
 psycopg[binary]==3.3.4
 python-dotenv==1.2.2
+
+# Step 3 — API
+fastapi==0.141.1
+uvicorn[standard]==0.52.3
