@@ -1,0 +1,6 @@
+# Step 2 — database only. FastAPI and the rest arrive at step 3.
+# Pinned exactly, as in the prior project: a local tool that breaks because a
+# transitive dependency moved is a bad way to spend an evening.
+
+psycopg[binary]==3.3.4
+python-dotenv==1.2.2
