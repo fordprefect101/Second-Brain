@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse
 
 from api.captures import router as captures_router
 from api.config import config
+from api.notes import router as notes_router
 from api.database import DatabaseUnavailable, connect, ensure_schema, EXPECTED_TABLES, list_tables
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -69,6 +70,7 @@ app.add_middleware(
 
 
 app.include_router(captures_router)
+app.include_router(notes_router)
 
 
 @app.get("/health")

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { CaptureItem } from '../types';
+import type { CaptureItem, Note } from '../types';
 import { listCaptures } from '../api/captures';
-import { MOCK_NOTES } from '../mock/notes';
+import { listNotes } from '../api/notes';
 import { SourceBadge } from '../components/SourceBadge';
 import { relativeTime } from '../lib/time';
 
@@ -20,29 +20,33 @@ import { relativeTime } from '../lib/time';
  */
 export function Home() {
   const [captures, setCaptures] = useState<CaptureItem[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
-    listCaptures('inbox')
-      .then((items) => {
-        if (active) setCaptures(items);
-      })
-      .catch(() => {
-        // Home degrades quietly: a dashboard count is not worth an error banner.
-        // Inbox surfaces the real error.
+
+    // Two independent requests, and Inbox and Knowledge each fire their own copies
+    // when you navigate there. Nothing is shared or cached — the duplication step
+    // 5.5 was meant to evaluate, now visible across four components.
+    Promise.allSettled([listCaptures('inbox'), listNotes(50)])
+      .then(([capturesResult, notesResult]) => {
+        if (!active) return;
+        if (capturesResult.status === 'fulfilled') setCaptures(capturesResult.value);
+        if (notesResult.status === 'fulfilled') setNotes(notesResult.value);
       })
       .finally(() => {
+        // Home degrades quietly: a dashboard count is not worth an error banner.
+        // Inbox and Knowledge surface the real errors.
         if (active) setLoading(false);
       });
+
     return () => {
       active = false;
     };
   }, []);
 
-  const recentNotes = [...MOCK_NOTES]
-    .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
-    .slice(0, 3);
+  const recentNotes = notes.slice(0, 3);
 
   return (
     <>
@@ -63,8 +67,8 @@ export function Home() {
           <span className="card-label">to triage</span>
         </Link>
         <Link to="/knowledge" className="card">
-          <span className="card-value">{MOCK_NOTES.length}</span>
-          <span className="card-label">notes · mock</span>
+          <span className="card-value">{loading ? '·' : notes.length}</span>
+          <span className="card-label">notes</span>
         </Link>
         <div className="card is-inert">
           <span className="card-value">—</span>

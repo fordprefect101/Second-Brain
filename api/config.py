@@ -26,6 +26,11 @@ class ConfigError(RuntimeError):
 class Config:
     database_url: str
 
+    # None when no vault is configured. An unconfigured integration is a normal
+    # state for this app, so it must not prevent startup — the /notes routes
+    # return 503 with an actionable message instead.
+    vault_path: Path | None = None
+
     # The Vite dev server. Narrow by default: this app is local-only and
     # single-user (Plan.md §22 — least privilege applies to CORS too).
     cors_origins: list[str] = field(
@@ -65,7 +70,10 @@ def load_config() -> Config:
             "DATABASE_URL."
         )
 
-    return Config(database_url=database_url)
+    raw_vault = os.getenv("OBSIDIAN_VAULT_PATH", "").strip()
+    vault_path = Path(raw_vault).expanduser() if raw_vault else None
+
+    return Config(database_url=database_url, vault_path=vault_path)
 
 
 config = load_config()
