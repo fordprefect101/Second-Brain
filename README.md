@@ -116,11 +116,23 @@ To apply the schema without starting the server:
 That prints the five tables and then applies the schema a second time, because
 idempotency is a claim worth testing rather than asserting.
 
+### Frontend
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Serves on `:5173` — a fixed port, since `api/config.py` allowlists exactly that origin
+for CORS. Currently renders mock data only; nothing calls the API until step 5.
+
 ### Day to day
 
 ```bash
 docker compose up -d                        # start the database
-.venv/bin/uvicorn api.main:app --reload     # start the API on :8000
+.venv/bin/uvicorn api.main:app --reload     # API on :8000
+cd web && npm run dev                       # UI on :5173
 docker compose stop                         # stop the database, keeping data
 ```
 
@@ -160,8 +172,8 @@ in this project.
 | 1 | Repo skeleton, docs tree, ADRs | done |
 | 2 | Docker Postgres, five-table schema, `ensure_schema()` | done |
 | 3 | FastAPI skeleton, health route, env config | done |
-| 4 | React/Vite shell with mock data | next |
-| 5 | Capture end-to-end (raw `fetch`) → 5.5 TanStack Query comparison | |
+| 4 | React/Vite shell with mock data | done |
+| 5 | Capture end-to-end (raw `fetch`) → 5.5 TanStack Query comparison | next |
 | 6 | *Learn:* markdown-as-data, filesystem safety | |
 | 7 | `NoteService` + `ObsidianVaultProvider` (list/read) | |
 | 8 | *Learn:* Postgres full-text search | |
@@ -182,7 +194,10 @@ api/
   database.py      connection handling + idempotent ensure_schema()
   db/schema.sql    the five tables
   requirements.txt
-web/               React + Vite frontend (from step 4)
+web/
+  src/types.ts     domain types — the contract the providers implement
+  src/pages/       one per section
+  src/mock/        stand-in data until the providers exist
 evals/             retrieval and agent evaluation harness (later phases)
 docs/              design notes, ADRs, learning log — maintained locally, not published
 ```
