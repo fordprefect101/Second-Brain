@@ -1,15 +1,45 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MOCK_CAPTURES } from '../mock/captures';
+import type { CaptureItem } from '../types';
+import { listCaptures } from '../api/captures';
 import { MOCK_NOTES } from '../mock/notes';
 import { SourceBadge } from '../components/SourceBadge';
 import { relativeTime } from '../lib/time';
 
 /**
- * The daily landing view. Becomes the real Today view at step 10, once captures
- * and notes come from live sources.
+ * The daily landing view. Captures are real; notes are still mock until step 7.
+ *
+ * This component fetches the SAME data as Inbox, independently. Navigate between
+ * the two and watch the network tab: every visit refetches, with a loading flicker
+ * each time, because nothing is shared or cached. Two components, two copies, two
+ * requests.
+ *
+ * That duplication is deliberate and is exactly the problem step 5.5 evaluates.
+ * Do not fix it by lifting state into a context — that is a third option worth
+ * discussing on its merits, not a workaround to apply quietly.
  */
 export function Home() {
-  const toTriage = MOCK_CAPTURES.filter((c) => c.status === 'inbox');
+  const [captures, setCaptures] = useState<CaptureItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    listCaptures('inbox')
+      .then((items) => {
+        if (active) setCaptures(items);
+      })
+      .catch(() => {
+        // Home degrades quietly: a dashboard count is not worth an error banner.
+        // Inbox surfaces the real error.
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const recentNotes = [...MOCK_NOTES]
     .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
     .slice(0, 3);
@@ -29,18 +59,37 @@ export function Home() {
 
       <div className="cards">
         <Link to="/inbox" className="card">
-          <span className="card-value">{toTriage.length}</span>
+          <span className="card-value">{loading ? '·' : captures.length}</span>
           <span className="card-label">to triage</span>
         </Link>
         <Link to="/knowledge" className="card">
           <span className="card-value">{MOCK_NOTES.length}</span>
-          <span className="card-label">notes</span>
+          <span className="card-label">notes · mock</span>
         </Link>
         <div className="card is-inert">
           <span className="card-value">—</span>
           <span className="card-label">events · Phase 3</span>
         </div>
       </div>
+
+      {captures.length > 0 && (
+        <>
+          <h2 className="section-heading">Latest captures</h2>
+          <ul className="list">
+            {captures.slice(0, 3).map((capture) => (
+              <li key={capture.id} className="list-item">
+                <div className="list-item-meta">
+                  <span className={`kind kind-${capture.kind}`}>{capture.kind}</span>
+                  <time dateTime={capture.createdAt}>
+                    {relativeTime(capture.createdAt)}
+                  </time>
+                </div>
+                <p className="list-item-body">{capture.body}</p>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       <h2 className="section-heading">Recently modified</h2>
       <ul className="list">

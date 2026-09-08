@@ -173,7 +173,8 @@ in this project.
 | 2 | Docker Postgres, five-table schema, `ensure_schema()` | done |
 | 3 | FastAPI skeleton, health route, env config | done |
 | 4 | React/Vite shell with mock data | done |
-| 5 | Capture end-to-end (raw `fetch`) → 5.5 TanStack Query comparison | next |
+| 5 | Capture end-to-end (raw `fetch`) — **Phase 1 complete** | done |
+| 5.5 | TanStack Query comparison against the hand-rolled version | next |
 | 6 | *Learn:* markdown-as-data, filesystem safety | |
 | 7 | `NoteService` + `ObsidianVaultProvider` (list/read) | |
 | 8 | *Learn:* Postgres full-text search | |

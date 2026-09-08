@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from api.captures import router as captures_router
 from api.config import config
 from api.database import DatabaseUnavailable, connect, ensure_schema, EXPECTED_TABLES, list_tables
 
@@ -65,6 +66,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(captures_router)
 
 
 @app.get("/health")
