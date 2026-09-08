@@ -417,6 +417,49 @@ body {
   opacity: 0.6;
 }
 
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.rank {
+  margin-left: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.index-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.index-controls .link-button {
+  margin-left: 0;
+}
+
+.index-note {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.note-body {
+  margin: 8px 0 0;
+  padding: 12px;
+  max-height: 400px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  background: var(--bg);
+  border-radius: 6px;
+}
+
 @media (max-width: 720px) {
   .app {
     grid-template-columns: 1fr;

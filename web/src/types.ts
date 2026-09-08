@@ -109,4 +109,6 @@ export interface SearchResult {
   excerpt: string;
   /** Required, not optional: a result that cannot name its source is a bug (§12). */
   source: SourceId;
+  /** ts_rank score. Only meaningful relative to other results in the same query. */
+  rank: number;
 }
