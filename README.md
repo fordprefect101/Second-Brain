@@ -81,8 +81,13 @@ cd "Personal-OS system"
 
 # 1. Configuration. .env is gitignored and must never be committed (§22).
 cp .env.example .env
-#    Edit .env and set POSTGRES_PASSWORD to anything local.
-#    Then update the password inside DATABASE_URL to match.
+#    Set POSTGRES_PASSWORD to anything local, and update the password
+#    inside DATABASE_URL to match.
+#
+#    Set OBSIDIAN_VAULT_PATH to your vault root — the folder containing
+#    .obsidian/, which is often one level deeper than the folder you
+#    created in Obsidian. Leave it blank to run without a vault; the
+#    /notes routes then return 503 with an explanation.
 
 # 2. Start Postgres (Docker Desktop must be running)
 docker compose up -d
@@ -174,10 +179,10 @@ in this project.
 | 3 | FastAPI skeleton, health route, env config | done |
 | 4 | React/Vite shell with mock data | done |
 | 5 | Capture end-to-end (raw `fetch`) — **Phase 1 complete** | done |
-| 5.5 | TanStack Query comparison against the hand-rolled version | next |
-| 6 | *Learn:* markdown-as-data, filesystem safety | |
-| 7 | `NoteService` + `ObsidianVaultProvider` (list/read) | |
-| 8 | *Learn:* Postgres full-text search | |
+| 5.5 | TanStack Query comparison | skipped — revisit when more components fetch |
+| 6 | *Learn:* markdown-as-data, filesystem safety | done |
+| 7 | `NoteService` + `ObsidianVaultProvider` (list/read) | done |
+| 8 | *Learn:* Postgres full-text search | next |
 | 9 | Index + search endpoint + search UI | |
 | 10 | Today view, review, tag V1 | |
 
