@@ -3,20 +3,23 @@ import { Link } from 'react-router-dom';
 import type { CaptureItem, Note } from '../types';
 import { listCaptures } from '../api/captures';
 import { listNotes } from '../api/notes';
+import { CaptureBox } from '../components/CaptureBox';
 import { SourceBadge } from '../components/SourceBadge';
-import { relativeTime } from '../lib/time';
+import { daysAgo, isToday, relativeTime } from '../lib/time';
 
 /**
- * The daily landing view. Captures are real; notes are still mock until step 7.
+ * Today — the daily landing view.
  *
- * This component fetches the SAME data as Inbox, independently. Navigate between
- * the two and watch the network tab: every visit refetches, with a loading flicker
- * each time, because nothing is shared or cached. Two components, two copies, two
- * requests.
+ * Answers "what is going on right now?" rather than listing everything. Three
+ * questions, in the order they get asked: what did I capture today, what is still
+ * waiting, what was I working on.
  *
- * That duplication is deliberate and is exactly the problem step 5.5 evaluates.
- * Do not fix it by lifting state into a context — that is a third option worth
- * discussing on its merits, not a workaround to apply quietly.
+ * The capture box is here as well as in Inbox because Plan.md §11 asks for FAST
+ * capture. A capture box you have to navigate to is one you stop using — this is
+ * the first screen, so a thought can be recorded without going anywhere.
+ *
+ * Calendar events belong in this view and are absent until Phase 3. The card says
+ * so rather than pretending the day has nothing in it.
  */
 export function Home() {
   const [captures, setCaptures] = useState<CaptureItem[]>([]);
@@ -25,41 +28,39 @@ export function Home() {
 
   useEffect(() => {
     let active = true;
-
-    // Two independent requests, and Inbox and Knowledge each fire their own copies
-    // when you navigate there. Nothing is shared or cached — the duplication step
-    // 5.5 was meant to evaluate, now visible across four components.
-    Promise.allSettled([listCaptures('inbox'), listNotes(50)])
-      .then(([capturesResult, notesResult]) => {
+    Promise.allSettled([listCaptures('inbox'), listNotes(50)]).then(
+      ([capturesResult, notesResult]) => {
         if (!active) return;
         if (capturesResult.status === 'fulfilled') setCaptures(capturesResult.value);
         if (notesResult.status === 'fulfilled') setNotes(notesResult.value);
-      })
-      .finally(() => {
-        // Home degrades quietly: a dashboard count is not worth an error banner.
-        // Inbox and Knowledge surface the real errors.
-        if (active) setLoading(false);
-      });
-
+        setLoading(false);
+      },
+    );
     return () => {
       active = false;
     };
   }, []);
 
-  const recentNotes = notes.slice(0, 3);
+  const capturedToday = captures.filter((c) => isToday(c.createdAt));
+  const waiting = captures.filter((c) => !isToday(c.createdAt));
+  const touchedThisWeek = notes.filter((n) => daysAgo(n.modifiedAt) <= 7);
+
+  const today = new Date();
 
   return (
     <>
       <header className="page-header">
         <h1>Today</h1>
         <p className="page-subtitle">
-          {new Date().toLocaleDateString(undefined, {
+          {today.toLocaleDateString(undefined, {
             weekday: 'long',
             day: 'numeric',
             month: 'long',
           })}
         </p>
       </header>
+
+      <CaptureBox onCaptured={(item) => setCaptures((current) => [item, ...current])} />
 
       <div className="cards">
         <Link to="/inbox" className="card">
@@ -76,11 +77,11 @@ export function Home() {
         </div>
       </div>
 
-      {captures.length > 0 && (
+      {capturedToday.length > 0 && (
         <>
-          <h2 className="section-heading">Latest captures</h2>
+          <h2 className="section-heading">Captured today</h2>
           <ul className="list">
-            {captures.slice(0, 3).map((capture) => (
+            {capturedToday.map((capture) => (
               <li key={capture.id} className="list-item">
                 <div className="list-item-meta">
                   <span className={`kind kind-${capture.kind}`}>{capture.kind}</span>
@@ -95,18 +96,61 @@ export function Home() {
         </>
       )}
 
-      <h2 className="section-heading">Recently modified</h2>
-      <ul className="list">
-        {recentNotes.map((note) => (
-          <li key={note.id} className="list-item">
-            <div className="list-item-meta">
-              <SourceBadge source={note.source} />
-              <time dateTime={note.modifiedAt}>{relativeTime(note.modifiedAt)}</time>
-            </div>
-            <h3 className="list-item-title">{note.title}</h3>
-          </li>
-        ))}
-      </ul>
+      {waiting.length > 0 && (
+        <>
+          <h2 className="section-heading">
+            Waiting in the inbox · {waiting.length}
+          </h2>
+          <ul className="list">
+            {waiting.slice(0, 4).map((capture) => (
+              <li key={capture.id} className="list-item is-muted">
+                <div className="list-item-meta">
+                  <span className={`kind kind-${capture.kind}`}>{capture.kind}</span>
+                  <time dateTime={capture.createdAt}>
+                    {relativeTime(capture.createdAt)}
+                  </time>
+                </div>
+                <p className="list-item-body">{capture.body}</p>
+              </li>
+            ))}
+          </ul>
+          {waiting.length > 4 && (
+            <p className="more-link">
+              <Link to="/inbox">{waiting.length - 4} more in the inbox →</Link>
+            </p>
+          )}
+        </>
+      )}
+
+      <h2 className="section-heading">
+        {touchedThisWeek.length > 0 ? 'Worked on this week' : 'Recently modified'}
+      </h2>
+      {loading ? (
+        <p className="list-item-body">Loading…</p>
+      ) : notes.length === 0 ? (
+        <div className="empty">
+          <p className="empty-title">No notes</p>
+          <p className="empty-detail">
+            Set OBSIDIAN_VAULT_PATH in .env, or add notes to the vault.
+          </p>
+        </div>
+      ) : (
+        <ul className="list">
+          {(touchedThisWeek.length > 0 ? touchedThisWeek : notes)
+            .slice(0, 5)
+            .map((note) => (
+              <li key={note.id} className="list-item">
+                <div className="list-item-meta">
+                  <SourceBadge source={note.source} />
+                  <time dateTime={note.modifiedAt}>
+                    {relativeTime(note.modifiedAt)}
+                  </time>
+                </div>
+                <h3 className="list-item-title">{note.title}</h3>
+              </li>
+            ))}
+        </ul>
+      )}
     </>
   );
 }

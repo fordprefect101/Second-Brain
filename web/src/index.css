@@ -447,6 +447,20 @@ body {
   color: var(--text-muted);
 }
 
+.more-link {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+
+.more-link a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.more-link a:hover {
+  color: var(--accent);
+}
+
 .note-body {
   margin: 8px 0 0;
   padding: 12px;

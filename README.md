@@ -183,8 +183,12 @@ in this project.
 | 6 | *Learn:* markdown-as-data, filesystem safety | done |
 | 7 | `NoteService` + `ObsidianVaultProvider` (list/read) | done |
 | 8 | *Learn:* Postgres full-text search | next |
-| 9 | Index + search endpoint + search UI | |
-| 10 | Today view, review, tag V1 | |
+| 9 | Index + search endpoint + search UI | done |
+| 10 | Today view, review, tag V1 | done |
+
+**V1 shipped.** Capture, triage, Obsidian notes (read-only), and keyword search across
+both — all working locally, no AI. Next: Phase 3 (Calendar and Tasks behind
+provider-independent interfaces), then the AI layer.
 
 Later phases: Google Calendar and Tasks behind provider-independent interfaces, then Notion,
 Drive, Sheets, Gmail, GitHub, Spotify — one at a time. Unified search starts as keyword
