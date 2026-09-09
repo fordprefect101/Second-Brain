@@ -123,6 +123,43 @@ create table if not exists sync_state (
 );
 
 -- ---------------------------------------------------------------------------
+-- 5b. note_snapshots — CANONICAL (added in Phase 2b)
+-- ---------------------------------------------------------------------------
+-- The undo path ADR-005 requires before any vault write is allowed.
+--
+-- This holds note content, which looks like it violates Plan.md §2. It does not,
+-- for the same reason a routed capture_items row does not: this is a SNAPSHOT OF A
+-- PAST STATE, not a cache of current state. It records what a file contained before
+-- we modified it. It is never read as "the note", never refreshed, and has no
+-- staleness obligation — the file remains canonical for what the note IS.
+--
+-- Drop test: losing this loses undo history. Real, though lower stakes than
+-- capture_items. It is the third table that does not survive a rebuild for free.
+--
+-- No FK to entity_map: this table is canonical and entity_map is rebuildable, so a
+-- FK would point from durable data to disposable data (the ADR-004 lesson).
+-- provider_id is denormalised for the same reason — undo must still work after the
+-- database is rebuilt and every internal id has changed.
+
+create table if not exists note_snapshots (
+    id           uuid        primary key default gen_random_uuid(),
+    entity_id    uuid        not null,
+    provider     text        not null,
+    provider_id  text        not null,
+
+    -- NULL means the note did not exist before this operation, so undoing a
+    -- 'create' means deleting the file rather than restoring content.
+    content      text,
+    operation    text        not null check (operation in ('create', 'update')),
+
+    taken_at     timestamptz not null default now(),
+    undone_at    timestamptz
+);
+
+create index if not exists note_snapshots_entity_idx
+    on note_snapshots (entity_id, taken_at desc);
+
+-- ---------------------------------------------------------------------------
 -- 5. search_index — derived, disposable
 -- ---------------------------------------------------------------------------
 -- THE LINE THAT MUST NOT BE CROSSED: cache what the INDEX needs, not what the

@@ -120,6 +120,72 @@ def create_capture(payload: CaptureCreate, conn: ConnDep) -> dict:
     return row
 
 
+class RouteRequest(CamelModel):
+    """Optional overrides. Both default to something sensible."""
+
+    title: str | None = None
+    folder: str = ""
+
+
+class RouteResult(CamelModel):
+    capture_id: UUID
+    entity_id: UUID
+    ref: str
+
+
+@router.post("/{capture_id}/route", response_model=RouteResult)
+def route_capture(capture_id: UUID, payload: RouteRequest, conn: ConnDep) -> RouteResult:
+    """Turn a capture into a note in the vault.
+
+    The first operation in this system that writes to the user's own files, so it
+    goes through the audited path in api/routing.py: snapshot, atomic write, record.
+    Reversible via /undo.
+    """
+    # Imported here rather than at module scope to keep captures.py independent of
+    # the vault — captures work perfectly well with no Obsidian configured.
+    from api.notes import get_note_service
+    from api.routing import RoutingError, route_capture_to_vault
+
+    service = get_note_service()  # raises 503 if no vault is configured
+
+    try:
+        routed = route_capture_to_vault(
+            conn, service, capture_id, title=payload.title, folder=payload.folder
+        )
+    except RoutingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Could not write to the vault: {exc}"
+        ) from exc
+
+    return RouteResult(
+        capture_id=routed.capture_id, entity_id=routed.entity_id, ref=routed.ref
+    )
+
+
+@router.post("/{capture_id}/undo-route", response_model=Capture)
+def undo_route(capture_id: UUID, conn: ConnDep) -> dict:
+    """Undo a routing: delete the note, return the capture to the inbox.
+
+    Refuses if the note was edited in Obsidian after routing — those are real edits
+    by a person, and deleting them would destroy work.
+    """
+    from api.notes import get_note_service
+    from api.routing import RoutingError, undo_routing
+
+    service = get_note_service()
+
+    try:
+        undo_routing(conn, service, capture_id)
+    except RoutingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    with conn.cursor() as cur:
+        cur.execute(f"select {COLUMNS} from capture_items where id = %s", (capture_id,))
+        return cur.fetchone()
+
+
 @router.post("/{capture_id}/archive", response_model=Capture)
 def archive_capture(capture_id: UUID, conn: ConnDep) -> dict:
     """Dismiss without routing anywhere.

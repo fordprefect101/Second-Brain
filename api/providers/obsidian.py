@@ -3,19 +3,21 @@
 Production version of docs/experiments/markdown-parsing/parse.py. The experiment
 established what the traps are; this handles them behind the NoteService interface.
 
-READ ONLY. create_note and update_note raise deliberately (ADR-005): writing to a
-personal knowledge vault needs atomic writes, snapshots, and an undo path first.
+Writes were enabled in Phase 2b, once ADR-005's conditions were met: atomic writes,
+a snapshot before every modification, and an undo path. Every write goes through
+_atomic_write — nothing here ever truncates a file in place.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 
-from api.services import NoteWritesNotSupported, ProviderNote
+from api.services import ProviderNote
 
 EXCERPT_CHARS = 240
 SKIP_DIRS = {".obsidian", ".trash"}
@@ -153,14 +155,101 @@ class ObsidianVaultProvider:
         path = self._resolve(provider_id)
         return self._read(path, with_body=True) if path else None
 
-    # -- Phase 2b --------------------------------------------------------
+    # -- writes (Phase 2b) -----------------------------------------------
 
-    def create_note(self, title: str, body: str) -> ProviderNote:
-        raise NoteWritesNotSupported(
-            "Vault writes are disabled until an undo mechanism exists (ADR-005)."
+    @staticmethod
+    def safe_filename(title: str) -> str:
+        """Turn arbitrary text into a filename that cannot escape the vault.
+
+        A capture body becomes a note title becomes a filename, so this text is
+        untrusted by the time it reaches the filesystem. Removed:
+
+          /  \\      path separators — the whole traversal attack
+          .. leading dots — '..' escapes upward, '.foo' hides the file
+          :  characters macOS and Windows reject or reinterpret
+          control characters, which can truncate paths
+
+        Length is capped at 80: filesystems limit a single component to 255 bytes,
+        and multi-byte characters make character counts misleading.
+        """
+        cleaned = "".join(
+            " " if ch in '/\\:*?"<>|' or ord(ch) < 32 else ch for ch in title
         )
+        cleaned = re.sub(r"\s+", " ", cleaned).strip().strip(".")
+        cleaned = cleaned[:80].strip()
+        return cleaned or "Untitled"
+
+    def _unique_path(self, folder: str, title: str) -> Path:
+        """A path that does not already exist, so a create never overwrites."""
+        directory = self.vault_root / folder if folder else self.vault_root
+
+        if not self._is_inside_vault(directory) and directory != self.vault_root:
+            raise ValueError(f"Folder escapes the vault: {folder!r}")
+
+        stem = self.safe_filename(title)
+        candidate = directory / f"{stem}.md"
+
+        counter = 2
+        while candidate.exists():
+            candidate = directory / f"{stem} {counter}.md"
+            counter += 1
+
+        return candidate
+
+    @staticmethod
+    def _atomic_write(path: Path, content: str) -> None:
+        """Write so the file is never observed half-written.
+
+        open(path, 'w') truncates immediately: if the process dies between the
+        truncate and the write, the note is now empty and unrecoverable. Instead:
+
+          1. write to a temp file in the SAME directory
+          2. flush, then fsync — force it out of the OS buffer onto the disk
+          3. os.replace() — atomic on POSIX within one filesystem
+
+        Same directory matters. os.replace across filesystems is a copy-then-delete,
+        which is not atomic and reintroduces the window we are closing.
+
+        A reader either sees the old file or the new one, never a partial one.
+        """
+        tmp = path.with_name(f".{path.name}.personal-os-tmp")
+        try:
+            with open(tmp, "w", encoding="utf-8") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    def create_note(self, title: str, body: str, folder: str = "") -> ProviderNote:
+        path = self._unique_path(folder, title)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._atomic_write(path, body)
+        return self._read(path, with_body=True)
 
     def update_note(self, provider_id: str, body: str) -> ProviderNote:
-        raise NoteWritesNotSupported(
-            "Vault writes are disabled until an undo mechanism exists (ADR-005)."
-        )
+        path = self._resolve(provider_id)
+        if path is None:
+            raise FileNotFoundError(f"No note at {provider_id!r}")
+        self._atomic_write(path, body)
+        return self._read(path, with_body=True)
+
+    def delete_note(self, provider_id: str) -> None:
+        """Only ever called to undo a create we made moments ago.
+
+        Not part of NoteService: deleting notes is not a capability the Personal OS
+        offers. It exists solely so undo can reverse its own writes.
+        """
+        path = self._resolve(provider_id)
+        if path is not None:
+            path.unlink(missing_ok=True)
+
+    def read_raw(self, provider_id: str) -> str | None:
+        """Exact file contents, for snapshotting before a write.
+
+        Deliberately not _read(): a snapshot must capture bytes as they are, not a
+        parsed representation, or undo would restore something subtly different.
+        """
+        path = self._resolve(provider_id)
+        return path.read_text(encoding="utf-8") if path else None

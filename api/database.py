@@ -24,6 +24,7 @@ EXPECTED_TABLES = {
     "capture_items",
     "connections",
     "entity_map",
+    "note_snapshots",
     "search_index",
     "sync_state",
 }

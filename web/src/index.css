@@ -366,6 +366,22 @@ body {
   cursor: default;
 }
 
+.row-actions {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.row-actions .link-button {
+  margin-left: 0;
+}
+
+.link-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  text-decoration: none;
+}
+
 .link-button {
   margin-left: auto;
   padding: 0;

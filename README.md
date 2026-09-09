@@ -186,9 +186,15 @@ in this project.
 | 9 | Index + search endpoint + search UI | done |
 | 10 | Today view, review, tag V1 | done |
 
-**V1 shipped.** Capture, triage, Obsidian notes (read-only), and keyword search across
-both — all working locally, no AI. Next: Phase 3 (Calendar and Tasks behind
-provider-independent interfaces), then the AI layer.
+**V1 shipped.** Capture, triage, Obsidian notes, and keyword search across both —
+working locally, no AI.
+
+**Phase 2b done.** Captures route into the vault as real markdown files, through an
+audited write path: snapshot → atomic write → record, with undo. The Inbox is no
+longer a dead end.
+
+Next: Phase 3 (Calendar and Tasks behind provider-independent interfaces), then the
+AI layer.
 
 Later phases: Google Calendar and Tasks behind provider-independent interfaces, then Notion,
 Drive, Sheets, Gmail, GitHub, Spotify — one at a time. Unified search starts as keyword

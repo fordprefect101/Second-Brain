@@ -22,3 +22,19 @@ export function createCapture(body: string, kind: CaptureKind): Promise<CaptureI
 export function archiveCapture(id: string): Promise<CaptureItem> {
   return api.post<CaptureItem>(`/captures/${id}/archive`);
 }
+
+export interface RouteResult {
+  captureId: string;
+  entityId: string;
+  ref: string;
+}
+
+/** Turn a capture into a note in the vault. Writes a real file. */
+export function routeCapture(id: string, folder = ''): Promise<RouteResult> {
+  return api.post<RouteResult>(`/captures/${id}/route`, { folder });
+}
+
+/** Reverse a routing. Refuses if the note was edited in Obsidian since. */
+export function undoRoute(id: string): Promise<CaptureItem> {
+  return api.post<CaptureItem>(`/captures/${id}/undo-route`);
+}
