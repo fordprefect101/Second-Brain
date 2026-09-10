@@ -175,8 +175,14 @@ class ObsidianVaultProvider:
         cleaned = "".join(
             " " if ch in '/\\:*?"<>|' or ord(ch) < 32 else ch for ch in title
         )
-        cleaned = re.sub(r"\s+", " ", cleaned).strip().strip(".")
-        cleaned = cleaned[:80].strip()
+        cleaned = re.sub(r"\s+", " ", cleaned)[:80]
+
+        # Strip dots and spaces from both ends TOGETHER, not in sequence. Doing
+        # them one after another leaves dots behind: '../../.ssh/id_rsa' becomes
+        # '.. .ssh id_rsa', a leading dot survives, and the note is created hidden
+        # — invisible in Finder and in Obsidian. Caught by a test, not by reading.
+        cleaned = cleaned.strip(". ")
+
         return cleaned or "Untitled"
 
     def _unique_path(self, folder: str, title: str) -> Path:

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { CaptureItem, Note } from '../types';
 import { listCaptures } from '../api/captures';
 import { listNotes } from '../api/notes';
+import { listEvents, needsReconnect, startGoogleConnect, type CalendarEvent } from '../api/google';
 import { CaptureBox } from '../components/CaptureBox';
 import { SourceBadge } from '../components/SourceBadge';
 import { daysAgo, isToday, relativeTime } from '../lib/time';
@@ -24,15 +25,22 @@ import { daysAgo, isToday, relativeTime } from '../lib/time';
 export function Home() {
   const [captures, setCaptures] = useState<CaptureItem[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [calendarReconnect, setCalendarReconnect] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
-    Promise.allSettled([listCaptures('inbox'), listNotes(50)]).then(
-      ([capturesResult, notesResult]) => {
+
+    // allSettled, not all: Google being disconnected must not blank the captures
+    // and notes. Each source degrades on its own.
+    Promise.allSettled([listCaptures('inbox'), listNotes(50), listEvents(1)]).then(
+      ([capturesResult, notesResult, eventsResult]) => {
         if (!active) return;
         if (capturesResult.status === 'fulfilled') setCaptures(capturesResult.value);
         if (notesResult.status === 'fulfilled') setNotes(notesResult.value);
+        if (eventsResult.status === 'fulfilled') setEvents(eventsResult.value);
+        else if (needsReconnect(eventsResult.reason)) setCalendarReconnect(true);
         setLoading(false);
       },
     );
@@ -40,6 +48,14 @@ export function Home() {
       active = false;
     };
   }, []);
+
+  const timeOf = (event: CalendarEvent) =>
+    event.allDay
+      ? 'all day'
+      : new Date(event.start).toLocaleTimeString(undefined, {
+          hour: 'numeric',
+          minute: '2-digit',
+        });
 
   const capturedToday = captures.filter((c) => isToday(c.createdAt));
   const waiting = captures.filter((c) => !isToday(c.createdAt));
@@ -71,11 +87,40 @@ export function Home() {
           <span className="card-value">{loading ? '·' : notes.length}</span>
           <span className="card-label">notes</span>
         </Link>
-        <div className="card is-inert">
-          <span className="card-value">—</span>
-          <span className="card-label">events · Phase 3</span>
-        </div>
+        <Link to="/tasks" className="card">
+          <span className="card-value">{loading ? '·' : events.length}</span>
+          <span className="card-label">events today</span>
+        </Link>
       </div>
+
+      {calendarReconnect && (
+        <p className="banner">
+          Google connection expired.{' '}
+          <button type="button" className="link-button" onClick={startGoogleConnect}>
+            reconnect
+          </button>
+        </p>
+      )}
+
+      {events.length > 0 && (
+        <>
+          <h2 className="section-heading">Schedule</h2>
+          <ul className="list">
+            {events.map((event) => (
+              <li key={event.id} className="list-item">
+                <div className="list-item-meta">
+                  <span className="event-time">{timeOf(event)}</span>
+                  <SourceBadge source="google_calendar" />
+                </div>
+                <h3 className="list-item-title">{event.title}</h3>
+                {event.location && (
+                  <p className="list-item-body">{event.location}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       {capturedToday.length > 0 && (
         <>

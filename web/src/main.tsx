@@ -7,6 +7,7 @@ import { Home } from './pages/Home';
 import { Inbox } from './pages/Inbox';
 import { Knowledge } from './pages/Knowledge';
 import { Search } from './pages/Search';
+import { Tasks } from './pages/Tasks';
 import { Settings } from './pages/Settings';
 import { Placeholder } from './pages/Placeholder';
 import './index.css';
@@ -24,6 +25,7 @@ const router = createBrowserRouter([
       { path: '/inbox', element: <Inbox /> },
       { path: '/knowledge', element: <Knowledge /> },
       { path: '/search', element: <Search /> },
+      { path: '/tasks', element: <Tasks /> },
       { path: '/settings', element: <Settings /> },
 
       // Navigable but empty. Real pages replace these in later phases; the routes

@@ -16,6 +16,7 @@ interface Section {
 const SECTIONS: Section[] = [
   { path: '/', label: 'Home', built: true },
   { path: '/inbox', label: 'Inbox', built: true },
+  { path: '/tasks', label: 'Tasks', built: true },
   { path: '/knowledge', label: 'Knowledge', built: true },
   { path: '/projects', label: 'Projects', built: false },
   { path: '/areas', label: 'Areas', built: false },

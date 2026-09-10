@@ -5,9 +5,17 @@
 !.env.example
 *.pem
 *.key
-credentials.json
-client_secret*.json
+
+# OAuth client files downloaded from Google Cloud Console. These contain the
+# client secret, and Google names the download after whatever you called the
+# client — so match broadly rather than assuming a filename.
+*client_secret*.json
+*client*secret*.json
+*credentials*.json
+*OAuth*.json
+*oauth*.json
 token*.json
+*.token.json
 
 # ---- Python ----
 __pycache__/

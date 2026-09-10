@@ -59,3 +59,61 @@ class NoteService(Protocol):
 
 class NoteWritesNotSupported(RuntimeError):
     """Raised by providers that are deliberately read-only for now."""
+
+
+# ---------------------------------------------------------------------------
+# Calendar and Tasks (Phase 3)
+# ---------------------------------------------------------------------------
+#
+# These interfaces are the real test of the layering. NoteService had one
+# implementation, which proves nothing — an interface with a single implementation
+# is just a file. Calendar and Tasks are structurally different from Obsidian:
+# remote rather than local, paginated, rate-limited, with credentials that expire.
+# If the abstraction has Obsidian-shaped assumptions in it, this is where it snaps.
+#
+# Note what is deliberately absent: no Google types, no field named after a Google
+# concept, nothing about pagination or tokens. Those live in the provider.
+
+
+@dataclass
+class CalendarEvent:
+    provider_id: str
+    title: str
+    start: datetime
+    end: datetime
+    # True for all-day events, where the API returns a date rather than a datetime.
+    # The distinction is real and the UI must render them differently, so it cannot
+    # be flattened away here.
+    all_day: bool = False
+    location: str | None = None
+    description: str | None = None
+    calendar_name: str | None = None
+
+
+@dataclass
+class Task:
+    provider_id: str
+    title: str
+    completed: bool = False
+    due: datetime | None = None
+    notes: str | None = None
+    # Google Tasks supports exactly one level of nesting (docs/integrations).
+    # Modelled as a parent id rather than a nested structure, so a provider with
+    # deeper nesting would not need this interface changed.
+    parent_id: str | None = None
+
+
+@runtime_checkable
+class CalendarService(Protocol):
+    source_id: str
+
+    def list_events(self, start: datetime, end: datetime) -> list[CalendarEvent]: ...
+
+
+@runtime_checkable
+class TaskService(Protocol):
+    source_id: str
+
+    def list_tasks(self, include_completed: bool = False) -> list[Task]: ...
+
+    def complete_task(self, provider_id: str) -> Task: ...
