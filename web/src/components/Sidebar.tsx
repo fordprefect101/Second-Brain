@@ -18,7 +18,7 @@ const SECTIONS: Section[] = [
   { path: '/inbox', label: 'Inbox', built: true },
   { path: '/tasks', label: 'Tasks', built: true },
   { path: '/knowledge', label: 'Knowledge', built: true },
-  { path: '/projects', label: 'Projects', built: false },
+  { path: '/projects', label: 'Projects', built: true },
   { path: '/areas', label: 'Areas', built: false },
   { path: '/resources', label: 'Resources', built: false },
   { path: '/ideas', label: 'Ideas', built: false },

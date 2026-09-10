@@ -12,46 +12,89 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from api.providers.google_client import GoogleClient
 from api.services import CalendarEvent
 
+CALENDAR_LIST_URL = "https://www.googleapis.com/calendar/v3/users/me/calendarList"
 EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events"
 
 
 class GoogleCalendarProvider:
     source_id = "google_calendar"
 
-    def __init__(self, repo_root: Path, calendar_id: str = "primary"):
+    def __init__(self, repo_root: Path, calendar_id: str | None = None):
         self.client = GoogleClient(repo_root)
+        # None means "every calendar the user has visible". Passing an explicit id
+        # restricts to one, which is useful in tests.
         self.calendar_id = calendar_id
 
+    def list_calendars(self) -> list[dict]:
+        """Calendars the user has switched ON in Google Calendar.
+
+        A Google account usually has far more calendars than the primary one —
+        subscribed sports schedules, holidays, shared family calendars, classroom
+        feeds. Querying only 'primary' silently returns nothing for people whose
+        real content lives in subscriptions.
+
+        `selected` is Google's own record of which calendars the user ticked
+        visible in their UI. Honouring it means the Personal OS shows what they
+        already chose to see, rather than inventing a different filter and then
+        needing settings to control it.
+        """
+        return [
+            calendar
+            for calendar in self.client.paginate(CALENDAR_LIST_URL, limit=100)
+            if calendar.get("selected", False)
+        ]
+
     def list_events(self, start: datetime, end: datetime) -> list[CalendarEvent]:
-        """Events in a window, earliest first."""
-        items = self.client.paginate(
-            EVENTS_URL.format(calendar_id=self.calendar_id),
-            {
-                "timeMin": _rfc3339(start),
-                "timeMax": _rfc3339(end),
-                # Expand recurring events into individual occurrences. Without this
-                # a weekly standup returns once, as a rule, and never appears on
-                # the right day.
-                "singleEvents": "true",
-                # Only permitted when singleEvents is true — Google rejects it
-                # otherwise, which is a confusing 400 the first time.
-                "orderBy": "startTime",
-                "maxResults": 250,
-            },
-            limit=500,
-        )
+        """Events across every visible calendar, earliest first.
 
-        events = []
-        for item in items:
-            # Cancelled occurrences of a recurring event still appear in the feed.
-            if item.get("status") == "cancelled":
-                continue
-            events.append(_to_event(item))
+        One request per calendar. At eight calendars that is eight round trips per
+        refresh — acceptable now, and exactly the cost sync_state exists to reduce
+        later with incremental sync tokens.
+        """
+        if self.calendar_id is not None:
+            targets = [{"id": self.calendar_id, "summary": None}]
+        else:
+            targets = [
+                {"id": c["id"], "summary": c.get("summary")}
+                for c in self.list_calendars()
+            ]
 
+        events: list[CalendarEvent] = []
+
+        for calendar in targets:
+            items = self.client.paginate(
+                EVENTS_URL.format(calendar_id=quote(calendar["id"], safe="")),
+                {
+                    "timeMin": _rfc3339(start),
+                    "timeMax": _rfc3339(end),
+                    # Expand recurring events into individual occurrences. Without
+                    # this a weekly standup returns once, as a rule, and never
+                    # appears on the right day.
+                    "singleEvents": "true",
+                    # Only permitted when singleEvents is true — Google rejects it
+                    # otherwise, which is a confusing 400 the first time.
+                    "orderBy": "startTime",
+                    "maxResults": 250,
+                },
+                limit=500,
+            )
+
+            for item in items:
+                # Cancelled occurrences of a recurring event still appear.
+                if item.get("status") == "cancelled":
+                    continue
+                events.append(_to_event(item, calendar.get("summary")))
+
+        # Each calendar came back sorted, but merging several breaks that — so the
+        # combined list has to be re-sorted. All-day events parse as naive
+        # datetimes and timed ones as aware, which cannot be compared directly,
+        # hence the key normalises before sorting.
+        events.sort(key=_sort_key)
         return events
 
 
@@ -66,7 +109,18 @@ def _rfc3339(value: datetime) -> str:
     return value.isoformat()
 
 
-def _to_event(item: dict) -> CalendarEvent:
+def _sort_key(event: CalendarEvent) -> datetime:
+    """Comparable key across all-day and timed events.
+
+    All-day events are deliberately naive (no timezone — an all-day event has no
+    meaningful one), timed events are aware. Python refuses to compare the two, so
+    naive values are treated as UTC purely for ordering.
+    """
+    start = event.start
+    return start.replace(tzinfo=timezone.utc) if start.tzinfo is None else start
+
+
+def _to_event(item: dict, calendar_name: str | None = None) -> CalendarEvent:
     """Map Google's shape onto the domain type.
 
     The awkward part: Google returns two different structures. A timed event has
@@ -86,6 +140,9 @@ def _to_event(item: dict) -> CalendarEvent:
         all_day=all_day,
         location=item.get("location"),
         description=item.get("description"),
+        # Which calendar this came from. With eight of them, "Formula 1" versus
+        # "Family" is most of what makes an event legible at a glance.
+        calendar_name=calendar_name,
     )
 
 

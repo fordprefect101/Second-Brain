@@ -110,7 +110,11 @@ export function Home() {
               <li key={event.id} className="list-item">
                 <div className="list-item-meta">
                   <span className="event-time">{timeOf(event)}</span>
-                  <SourceBadge source="google_calendar" />
+                  {/* Which calendar, not just "Google" — with eight of them,
+                      "Formula 1" vs "Family" is what makes an event legible. */}
+                  <span className="source-badge">
+                    {event.calendarName ?? 'Calendar'}
+                  </span>
                 </div>
                 <h3 className="list-item-title">{event.title}</h3>
                 {event.location && (

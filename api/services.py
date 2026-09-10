@@ -117,3 +117,48 @@ class TaskService(Protocol):
     def list_tasks(self, include_completed: bool = False) -> list[Task]: ...
 
     def complete_task(self, provider_id: str) -> Task: ...
+
+
+# ---------------------------------------------------------------------------
+# Code activity (Phase 4 — GitHub)
+# ---------------------------------------------------------------------------
+#
+# The first NON-GOOGLE provider, which is what makes it interesting. Calendar and
+# Tasks tested whether the layering survived a remote, paginated, expiring-auth
+# source — but both shared one OAuth client and one HTTP client. GitHub uses a
+# personal access token, different pagination (Link headers, not page tokens), and
+# signals rate limiting with 403 rather than 429.
+#
+# If the abstraction only fitted Google, this is where that shows.
+
+
+@dataclass
+class Repository:
+    provider_id: str          # 'owner/name'
+    name: str
+    description: str | None
+    pushed_at: datetime
+    language: str | None = None
+    private: bool = False
+    url: str | None = None
+
+
+@dataclass
+class Activity:
+    """Something that happened in a repository."""
+
+    provider_id: str
+    kind: str                 # 'push', 'pull_request', 'issue', ...
+    summary: str
+    repository: str
+    occurred_at: datetime
+    url: str | None = None
+
+
+@runtime_checkable
+class ActivityService(Protocol):
+    source_id: str
+
+    def list_repositories(self, limit: int = 30) -> list[Repository]: ...
+
+    def list_activity(self, limit: int = 30) -> list[Activity]: ...

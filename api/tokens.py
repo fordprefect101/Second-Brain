@@ -110,3 +110,39 @@ def delete(provider: str) -> None:
         pass  # already gone
     except KeyringError as exc:
         raise TokenStoreError(f"Could not delete from the keychain: {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Simple secrets (Phase 4)
+# ---------------------------------------------------------------------------
+#
+# Not every provider uses OAuth. A GitHub personal access token is a single opaque
+# string with no refresh cycle and no expiry we manage — so it gets a plain
+# get/set/delete rather than the StoredTokens dance.
+#
+# It is still a credential to a real account, so it lives in the same Keychain.
+# The lack of a refresh flow makes it MORE sensitive, not less: nothing rotates it,
+# so a leaked PAT stays valid until revoked by hand.
+
+
+def save_secret(name: str, value: str) -> None:
+    try:
+        keyring.set_password(SERVICE, name, value)
+    except KeyringError as exc:
+        raise TokenStoreError(f"Could not write to the keychain: {exc}") from exc
+
+
+def load_secret(name: str) -> str | None:
+    try:
+        return keyring.get_password(SERVICE, name)
+    except KeyringError as exc:
+        raise TokenStoreError(f"Could not read the keychain: {exc}") from exc
+
+
+def delete_secret(name: str) -> None:
+    try:
+        keyring.delete_password(SERVICE, name)
+    except keyring.errors.PasswordDeleteError:
+        pass
+    except KeyringError as exc:
+        raise TokenStoreError(f"Could not delete from the keychain: {exc}") from exc

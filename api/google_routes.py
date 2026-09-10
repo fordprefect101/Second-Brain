@@ -51,6 +51,7 @@ class CalendarEventOut(CamelModel):
     end: datetime
     all_day: bool
     location: str | None = None
+    calendar_name: str | None = None
     source: str
 
 
@@ -184,6 +185,7 @@ def list_events(
             end=event.end,
             all_day=event.all_day,
             location=event.location,
+            calendar_name=event.calendar_name,
             source=service.source_id,
         )
         for event in events

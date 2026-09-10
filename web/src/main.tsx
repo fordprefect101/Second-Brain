@@ -8,6 +8,7 @@ import { Inbox } from './pages/Inbox';
 import { Knowledge } from './pages/Knowledge';
 import { Search } from './pages/Search';
 import { Tasks } from './pages/Tasks';
+import { Projects } from './pages/Projects';
 import { Settings } from './pages/Settings';
 import { Placeholder } from './pages/Placeholder';
 import './index.css';
@@ -30,10 +31,7 @@ const router = createBrowserRouter([
 
       // Navigable but empty. Real pages replace these in later phases; the routes
       // exist now so the information architecture is testable by clicking it.
-      {
-        path: '/projects',
-        element: <Placeholder title="Projects" phase="Phase 2 — needs a knowledge source" />,
-      },
+      { path: '/projects', element: <Projects /> },
       {
         path: '/areas',
         element: <Placeholder title="Areas" phase="Phase 2 — needs a knowledge source" />,

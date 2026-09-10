@@ -36,8 +36,8 @@ SCOPES = [
     "https://www.googleapis.com/auth/tasks",
 ]
 
-CALLBACK_PORT = 8765
-REDIRECT_URI = f"http://localhost:{CALLBACK_PORT}/callback"
+CALLBACK_PORT = 8000
+REDIRECT_URI = f"http://localhost:{CALLBACK_PORT}/google/callback"
 
 PROVIDER = "google"
 
