@@ -1,30 +1,36 @@
 import { NavLink } from 'react-router-dom';
 
 /**
- * The ten sections from Plan.md §6.
+ * Every section here is real. There are no stubs.
  *
- * `built: false` marks sections that are navigable but empty. Showing them greyed
- * rather than hiding them keeps the information architecture visible while it is
- * still cheap to change — which is the actual purpose of this step.
+ * There used to be four — Areas, Resources, Ideas, Goals — shown greyed so the
+ * information architecture stayed visible while it was cheap to change. That was
+ * right while the app was mock data and the shape was being tested by clicking it.
+ * It stopped being right once this became a tool used daily: a dead link is a dead
+ * link, and three of the four had gone stale anyway (Ideas promised routed captures
+ * would land there; they route to Obsidian instead. Resources promised Notion,
+ * which was ruled out).
+ *
+ * Ideas and Resources need no home of their own: a capture carries a `kind`, so
+ * both are already visible in Inbox and findable in search. Areas and Goals had
+ * no owner and no data.
+ *
+ * Tasks and Knowledge are still destinations, and stop being so once Today absorbs
+ * them — removing them before that would orphan working features.
  */
 interface Section {
   path: string;
   label: string;
-  built: boolean;
 }
 
 const SECTIONS: Section[] = [
-  { path: '/', label: 'Home', built: true },
-  { path: '/inbox', label: 'Inbox', built: true },
-  { path: '/tasks', label: 'Tasks', built: true },
-  { path: '/knowledge', label: 'Knowledge', built: true },
-  { path: '/projects', label: 'Projects', built: true },
-  { path: '/areas', label: 'Areas', built: false },
-  { path: '/resources', label: 'Resources', built: false },
-  { path: '/ideas', label: 'Ideas', built: false },
-  { path: '/goals', label: 'Goals', built: false },
-  { path: '/search', label: 'Search', built: true },
-  { path: '/settings', label: 'Settings', built: true },
+  { path: '/', label: 'Today' },
+  { path: '/inbox', label: 'Inbox' },
+  { path: '/tasks', label: 'Tasks' },
+  { path: '/knowledge', label: 'Knowledge' },
+  { path: '/projects', label: 'Projects' },
+  { path: '/search', label: 'Search' },
+  { path: '/settings', label: 'Settings' },
 ];
 
 export function Sidebar() {
@@ -32,7 +38,9 @@ export function Sidebar() {
     <nav className="sidebar">
       <div className="sidebar-brand">
         Personal OS
-        <span className="sidebar-version">v0.1 · mock data</span>
+        {/* Was "v0.1 · mock data", which stopped being true three phases ago and
+            was the first thing anyone reads on the screen. */}
+        <span className="sidebar-version">obsidian · calendar · tasks · github</span>
       </div>
 
       <ul className="sidebar-nav">
@@ -44,13 +52,7 @@ export function Sidebar() {
               // highlighted on every page.
               end={section.path === '/'}
               className={({ isActive }) =>
-                [
-                  'sidebar-link',
-                  isActive ? 'is-active' : '',
-                  section.built ? '' : 'is-stub',
-                ]
-                  .filter(Boolean)
-                  .join(' ')
+                ['sidebar-link', isActive ? 'is-active' : ''].filter(Boolean).join(' ')
               }
             >
               {section.label}

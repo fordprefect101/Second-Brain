@@ -99,8 +99,13 @@ def _to_task(item: dict, list_id: str, list_name: str | None) -> Task:
         # Google returns due dates as RFC3339 with a Z suffix, which
         # fromisoformat handles only from Python 3.11 onward.
         due=datetime.fromisoformat(due) if due else None,
-        notes=item.get("notes") or (f"in {list_name}" if list_name else None),
+        notes=item.get("notes"),
         # Present only on subtasks. Prefixed with the list so it matches the
         # provider_id format above and can be resolved without extra context.
         parent_id=f"{list_id}/{item['parent']}" if item.get("parent") else None,
+        # Carried as data, not as a fallback inside notes. It used to be written
+        # into `notes` only when a task had none of its own, so any task with real
+        # notes silently lost which list it came from — and "To Read" vs "Work" is
+        # exactly the distinction that must survive.
+        list_name=list_name,
     )

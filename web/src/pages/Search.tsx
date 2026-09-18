@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { SOURCES, type SourceId, type SearchResult } from '../types';
 import { reindex, search } from '../api/search';
 import { ApiError } from '../api/client';
 import { SourceBadge } from '../components/SourceBadge';
+import { relativeTime } from '../lib/time';
 
 /**
  * Unified search across notes, captures, calendar, tasks, and repositories.
@@ -16,6 +18,43 @@ import { SourceBadge } from '../components/SourceBadge';
  * word returns a wall of race sessions. Filtering is how the index stays useful
  * while it is unbalanced.
  */
+
+/**
+ * When a result is — formatted by what its timestamp actually means.
+ *
+ * `modifiedAt` carries a different fact per source (see types.ts), so one format
+ * cannot serve all five. A calendar event needs an absolute date: "Practice 2"
+ * with no date is unusable, and "in 3 days" is not how anyone thinks about a race
+ * weekend. Everything else is a last-changed time, where relative reads better —
+ * "edited 2 days ago" beats a timestamp you have to mentally subtract.
+ *
+ * Tasks use their due date, so they get the absolute treatment too: a deadline is
+ * a point in time, not an elapsed one.
+ */
+function whenOf(result: SearchResult): string {
+  const iso = result.modifiedAt;
+  if (!iso) return '';
+
+  if (result.source === 'google_calendar' || result.source === 'google_tasks') {
+    const when = new Date(iso);
+    const date = when.toLocaleDateString(undefined, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    });
+    // Midnight almost always means all-day or no time set, rather than an event
+    // genuinely at 00:00 — showing "12:00 AM" would be precise and misleading.
+    const isMidnight = when.getHours() === 0 && when.getMinutes() === 0;
+    if (isMidnight) return date;
+
+    return `${date} · ${when.toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+    })}`;
+  }
+
+  return relativeTime(iso);
+}
 
 const FILTERS: (SourceId | null)[] = [
   null,
@@ -136,17 +175,39 @@ export function Search() {
       )}
 
       <ul className="list">
-        {results.map((result) => (
-          <li key={result.id} className="list-item">
-            <div className="list-item-meta">
-              {/* §12: results must always identify their source. */}
-              <SourceBadge source={result.source} />
-              <span className="rank">{result.rank.toFixed(3)}</span>
-            </div>
-            <h3 className="list-item-title">{result.title}</h3>
-            {result.excerpt && <p className="list-item-body">{result.excerpt}</p>}
-          </li>
-        ))}
+        {results.map((result) => {
+          const body = (
+            <>
+              <div className="list-item-meta">
+                {/* §12: results must always identify their source. */}
+                <SourceBadge source={result.source} />
+                {result.modifiedAt && <span>{whenOf(result)}</span>}
+              </div>
+              <h3 className="list-item-title">{result.title}</h3>
+              {result.excerpt && <p className="list-item-body">{result.excerpt}</p>}
+            </>
+          );
+
+          // Only notes have somewhere to go. Tasks, events and repos are shown
+          // but not linked, because a row that looks clickable and isn't is
+          // worse than one that plainly isn't — which is what every result used
+          // to be. Their detail views arrive with their own pages.
+          return result.source === 'obsidian' ? (
+            <li key={result.id}>
+              <Link
+                to={`/notes/${result.id}`}
+                className="list-item is-clickable"
+                data-source={result.source}
+              >
+                {body}
+              </Link>
+            </li>
+          ) : (
+            <li key={result.id} className="list-item" data-source={result.source}>
+              {body}
+            </li>
+          );
+        })}
       </ul>
 
       <div className="index-controls">

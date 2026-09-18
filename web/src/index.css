@@ -13,6 +13,31 @@
   --radius: 8px;
   --sidebar-width: 208px;
 
+  /* Wider than the old 780px. This is a dashboard, not an article: the job of
+     the Today view is to show a day at a glance, and a narrow column forces
+     scrolling past things that should have been visible at once. */
+  --content-max: 1180px;
+
+  /* One colour per source.
+
+     This is the design problem no single-purpose tool has: five kinds of thing
+     arrive mixed together in one list, and you must know which is which without
+     reading. Rendering them identically is why the UI reads as flat.
+
+     Muted on purpose — these sit next to each other constantly, so they have to
+     coexist rather than compete. Captures reuse the app accent because they are
+     the one source the Personal OS actually owns. */
+  --src-obsidian: #7c5cbf;
+  --src-obsidian-soft: #f0ebf9;
+  --src-personal-os: #2f6f4e;
+  --src-personal-os-soft: #eaf2ed;
+  --src-calendar: #3b6fb5;
+  --src-calendar-soft: #e9f0f9;
+  --src-tasks: #a86a24;
+  --src-tasks-soft: #f8f0e4;
+  --src-github: #55585f;
+  --src-github-soft: #eeeeef;
+
   color-scheme: light dark;
 }
 
@@ -25,6 +50,20 @@
     --text-muted: #9a978f;
     --accent: #7cc39a;
     --accent-soft: #23302a;
+
+    /* Lighter hues, darker fills — the same five identities, inverted. Defining
+       them here rather than reusing the light values matters: #7c5cbf on #1e1f1c
+       fails contrast, so the badge text would be unreadable in dark mode. */
+    --src-obsidian: #b49ae0;
+    --src-obsidian-soft: #2b2537;
+    --src-personal-os: #7cc39a;
+    --src-personal-os-soft: #23302a;
+    --src-calendar: #8ab0e4;
+    --src-calendar-soft: #212a36;
+    --src-tasks: #d7a869;
+    --src-tasks-soft: #332a1e;
+    --src-github: #a8abb2;
+    --src-github-soft: #2a2b2d;
   }
 }
 
@@ -49,8 +88,54 @@ body {
 }
 
 .main {
-  padding: 40px 44px;
-  max-width: 780px;
+  padding: 36px 44px 64px;
+  max-width: var(--content-max);
+  width: 100%;
+}
+
+/* ---- Grid ---- */
+
+/* Today's two-column split: what is happening, next to what is waiting.
+   Collapses to one column below 900px, which is also the phone case later. */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 18px 8px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+
+.panel-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- Sidebar ---- */
@@ -105,10 +190,8 @@ body {
   font-weight: 500;
 }
 
-/* Navigable but empty — visible, and visibly unfinished. */
-.sidebar-link.is-stub {
-  color: var(--text-muted);
-}
+/* .is-stub removed with the four stub sections it greyed out. Every nav item
+   now goes somewhere real. */
 
 /* ---- Page furniture ---- */
 
@@ -233,6 +316,60 @@ body {
   justify-content: space-between;
 }
 
+/* ---- Note detail ---- */
+
+/* Narrower than the dashboard on purpose. Today is a scanning surface and wants
+   density; a note is a reading surface and wants a measure short enough to read
+   without losing your place. Different jobs, different widths. */
+.note {
+  max-width: 680px;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 18px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.back-link:hover {
+  color: var(--accent);
+}
+
+.note-head {
+  padding-bottom: 16px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.note-title {
+  margin: 0 0 10px;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.note-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tag {
+  color: var(--text-muted);
+}
+
+.note-body {
+  white-space: pre-wrap;
+  font-size: 15px;
+  line-height: 1.7;
+  word-break: break-word;
+}
+
 /* ---- Badges ---- */
 
 .source-badge,
@@ -244,6 +381,74 @@ body {
   border: 1px solid var(--border);
   font-size: 11px;
   text-transform: lowercase;
+}
+
+/* ---- Source identity ----
+
+   Each source carries its own colour, on the badge and as a left border on the
+   row. Both together, deliberately: the badge is what you read, the border is
+   what you see while scanning without reading. A mixed result list is the normal
+   case here, so telling a calendar event from a note has to survive peripheral
+   vision. */
+
+.source-badge[data-source] {
+  border-color: transparent;
+  font-weight: 500;
+}
+
+.source-badge[data-source='obsidian'] {
+  color: var(--src-obsidian);
+  background: var(--src-obsidian-soft);
+}
+.source-badge[data-source='personal_os'] {
+  color: var(--src-personal-os);
+  background: var(--src-personal-os-soft);
+}
+.source-badge[data-source='google_calendar'] {
+  color: var(--src-calendar);
+  background: var(--src-calendar-soft);
+}
+.source-badge[data-source='google_tasks'] {
+  color: var(--src-tasks);
+  background: var(--src-tasks-soft);
+}
+.source-badge[data-source='github'] {
+  color: var(--src-github);
+  background: var(--src-github-soft);
+}
+
+.list-item[data-source] {
+  border-left-width: 3px;
+}
+
+.list-item[data-source='obsidian'] {
+  border-left-color: var(--src-obsidian);
+}
+.list-item[data-source='personal_os'] {
+  border-left-color: var(--src-personal-os);
+}
+.list-item[data-source='google_calendar'] {
+  border-left-color: var(--src-calendar);
+}
+.list-item[data-source='google_tasks'] {
+  border-left-color: var(--src-tasks);
+}
+.list-item[data-source='github'] {
+  border-left-color: var(--src-github);
+}
+
+/* Rows that open something. Inert rows must not pretend to be clickable —
+   the old search results looked identical to links and did nothing. */
+.list-item.is-clickable {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+
+.list-item.is-clickable:hover {
+  border-color: var(--accent);
+  transform: translateX(1px);
 }
 
 .kind-idea,
@@ -438,12 +643,9 @@ body {
   border-color: var(--accent);
 }
 
-.rank {
-  margin-left: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  color: var(--text-muted);
-}
+/* .rank removed with the score it styled. ts_rank is a debug number — 0.998 next
+   to a result tells a user nothing and is the first thing anyone asks about in a
+   demo. The ordering it produces is the visible part; the value is not. */
 
 .index-controls {
   display: flex;

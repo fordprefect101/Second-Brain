@@ -10,6 +10,8 @@ cannot tell where they came from.
 
 from __future__ import annotations
 
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -19,6 +21,28 @@ from api.services import CalendarEvent
 
 CALENDAR_LIST_URL = "https://www.googleapis.com/calendar/v3/users/me/calendarList"
 EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events"
+
+# How many calendars to query at once. Cap rather than one thread per calendar:
+# a subscribed-feed collector can have dozens, and firing all of them at Google
+# simultaneously invites the 429 that GoogleClient then has to back off from.
+MAX_CONCURRENT_CALENDARS = 8
+
+# Which calendars exist changes when the user subscribes to something — monthly
+# at most. Fetching it on every request cost 0.75s of every page load.
+#
+# Module-level rather than per-instance because a provider is constructed fresh
+# for each request, so an instance cache would never be read twice.
+#
+# Two concurrent requests can both miss and both fetch. That is a wasted call,
+# not a correctness problem, so this stays lock-free.
+_CALENDAR_CACHE: tuple[float, list[dict]] | None = None
+CALENDAR_CACHE_TTL_SECONDS = 600
+
+
+def clear_calendar_cache() -> None:
+    """Drop the cached calendar list. For tests, and for after a reconnect."""
+    global _CALENDAR_CACHE
+    _CALENDAR_CACHE = None
 
 
 class GoogleCalendarProvider:
@@ -42,19 +66,68 @@ class GoogleCalendarProvider:
         visible in their UI. Honouring it means the Personal OS shows what they
         already chose to see, rather than inventing a different filter and then
         needing settings to control it.
+
+        Cached for CALENDAR_CACHE_TTL_SECONDS — see the note above _CALENDAR_CACHE.
         """
-        return [
+        global _CALENDAR_CACHE
+
+        if _CALENDAR_CACHE is not None:
+            cached_at, calendars = _CALENDAR_CACHE
+            if time.monotonic() - cached_at < CALENDAR_CACHE_TTL_SECONDS:
+                return calendars
+
+        calendars = [
             calendar
             for calendar in self.client.paginate(CALENDAR_LIST_URL, limit=100)
             if calendar.get("selected", False)
+        ]
+        _CALENDAR_CACHE = (time.monotonic(), calendars)
+        return calendars
+
+    def _events_for(
+        self, calendar: dict, start: datetime, end: datetime
+    ) -> list[CalendarEvent]:
+        """One calendar's events. Runs in a worker thread — see list_events."""
+        items = self.client.paginate(
+            EVENTS_URL.format(calendar_id=quote(calendar["id"], safe="")),
+            {
+                "timeMin": _rfc3339(start),
+                "timeMax": _rfc3339(end),
+                # Expand recurring events into individual occurrences. Without
+                # this a weekly standup returns once, as a rule, and never
+                # appears on the right day.
+                "singleEvents": "true",
+                # Only permitted when singleEvents is true — Google rejects it
+                # otherwise, which is a confusing 400 the first time.
+                "orderBy": "startTime",
+                "maxResults": 250,
+            },
+            limit=500,
+        )
+
+        return [
+            _to_event(item, calendar.get("summary"))
+            for item in items
+            # Cancelled occurrences of a recurring event still appear.
+            if item.get("status") != "cancelled"
         ]
 
     def list_events(self, start: datetime, end: datetime) -> list[CalendarEvent]:
         """Events across every visible calendar, earliest first.
 
-        One request per calendar. At eight calendars that is eight round trips per
-        refresh — acceptable now, and exactly the cost sync_state exists to reduce
-        later with incremental sync tokens.
+        Still one request per calendar, but issued concurrently rather than in
+        sequence. Measured against a real account: seven calendars took 5.7s
+        serially at ~0.8s each, because the wait is entirely network latency and
+        nothing overlapped. Concurrently the whole set costs roughly as much as
+        the slowest single calendar.
+
+        Threads rather than asyncio: GoogleClient is synchronous and carries the
+        refresh-on-401 and backoff logic, and porting that to async would be a far
+        larger change than the one this speedup justifies. The work is I/O-bound,
+        so the GIL is released during the request and threads are enough.
+
+        Exception semantics are unchanged — if any calendar fails the whole call
+        fails, exactly as the sequential version did.
         """
         if self.calendar_id is not None:
             targets = [{"id": self.calendar_id, "summary": None}]
@@ -64,31 +137,18 @@ class GoogleCalendarProvider:
                 for c in self.list_calendars()
             ]
 
-        events: list[CalendarEvent] = []
+        if not targets:
+            return []
 
-        for calendar in targets:
-            items = self.client.paginate(
-                EVENTS_URL.format(calendar_id=quote(calendar["id"], safe="")),
-                {
-                    "timeMin": _rfc3339(start),
-                    "timeMax": _rfc3339(end),
-                    # Expand recurring events into individual occurrences. Without
-                    # this a weekly standup returns once, as a rule, and never
-                    # appears on the right day.
-                    "singleEvents": "true",
-                    # Only permitted when singleEvents is true — Google rejects it
-                    # otherwise, which is a confusing 400 the first time.
-                    "orderBy": "startTime",
-                    "maxResults": 250,
-                },
-                limit=500,
+        with ThreadPoolExecutor(
+            max_workers=min(len(targets), MAX_CONCURRENT_CALENDARS)
+        ) as pool:
+            # map, not submit+as_completed: results are re-sorted below anyway, and
+            # map re-raises the first exception, preserving the old behaviour.
+            per_calendar = pool.map(
+                lambda calendar: self._events_for(calendar, start, end), targets
             )
-
-            for item in items:
-                # Cancelled occurrences of a recurring event still appear.
-                if item.get("status") == "cancelled":
-                    continue
-                events.append(_to_event(item, calendar.get("summary")))
+            events = [event for group in per_calendar for event in group]
 
         # Each calendar came back sorted, but merging several breaks that — so the
         # combined list has to be re-sorted. All-day events parse as naive

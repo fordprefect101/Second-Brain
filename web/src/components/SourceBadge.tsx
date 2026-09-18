@@ -8,5 +8,11 @@ import { SOURCES, type SourceId } from '../types';
  * when there are four providers and inconsistent labelling.
  */
 export function SourceBadge({ source }: { source: SourceId }) {
-  return <span className="source-badge">{SOURCES[source].label}</span>;
+  // data-source rather than a class per source: the stylesheet owns the palette,
+  // so adding a provider means adding CSS, not editing this component.
+  return (
+    <span className="source-badge" data-source={source}>
+      {SOURCES[source].label}
+    </span>
+  );
 }

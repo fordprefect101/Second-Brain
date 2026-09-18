@@ -20,8 +20,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from psycopg.rows import dict_row
 from fastapi.responses import JSONResponse
 
+from api.assistant_routes import router as assistant_router
 from api.captures import router as captures_router
 from api.config import config
 from api.github_routes import router as github_router
@@ -29,6 +31,8 @@ from api.google_routes import router as google_router
 from api.notes import router as notes_router
 from api.search_routes import router as search_router
 from api.database import DatabaseUnavailable, connect, ensure_schema, EXPECTED_TABLES, list_tables
+from api.search import hours_since_last_sync
+from api.search_routes import run_reindex
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("personal-os")
@@ -52,8 +56,57 @@ async def lifespan(app: FastAPI):
         logger.error("Startup failed.\n%s", exc)
         raise
     logger.info("Schema applied. Personal OS API ready.")
+
+    _reindex_if_stale()
+
     yield
     logger.info("Shutting down.")
+
+
+# Rebuild the index if it has not been rebuilt in this long.
+REINDEX_AFTER_HOURS = 24
+
+
+def _reindex_if_stale() -> None:
+    """Refresh the index at startup if it has gone stale.
+
+    Staleness-on-use rather than a scheduled job, because the goal is "the index
+    is current when I use it", and this app is started by hand. A cron firing at a
+    fixed hour refreshes an index nobody is about to read, and misses entirely on
+    the days it is opened before that hour.
+
+    Deliberately NOT fatal, unlike ensure_schema above. A disconnected Google
+    account is a normal weekly state (unverified apps get 7-day refresh tokens),
+    and the app is entirely usable against a slightly stale index. Refusing to
+    start over it would be wrong.
+
+    Cheap under --reload: only the first start reindexes, because every reload
+    after it sees a fresh timestamp and skips.
+    """
+    try:
+        with connect() as conn:
+            # index_source reads rows by name, so the row factory is required —
+            # a bare connection raises "tuple indices must be integers".
+            conn.row_factory = dict_row
+
+            age = hours_since_last_sync(conn)
+            if age is not None and age < REINDEX_AFTER_HOURS:
+                logger.info("Index is %.1fh old — skipping reindex.", age)
+                return
+
+            logger.info(
+                "Index %s — rebuilding.",
+                "has never been built" if age is None else f"is {age:.1f}h old",
+            )
+            stats = run_reindex(conn)
+            if stats.errors:
+                # A source that failed must be named. A silently smaller index
+                # looks identical to a correct one.
+                logger.warning("Reindex finished with errors: %s", stats.errors)
+            else:
+                logger.info("Reindex complete.")
+    except Exception as exc:  # noqa: BLE001 - startup must survive this
+        logger.warning("Startup reindex skipped: %s: %s", type(exc).__name__, exc)
 
 
 app = FastAPI(
@@ -77,6 +130,7 @@ app.include_router(notes_router)
 app.include_router(search_router)
 app.include_router(google_router)
 app.include_router(github_router)
+app.include_router(assistant_router)
 
 
 @app.get("/health")

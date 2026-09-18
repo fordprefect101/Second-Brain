@@ -111,4 +111,11 @@ export interface SearchResult {
   source: SourceId;
   /** ts_rank score. Only meaningful relative to other results in the same query. */
   rank: number;
+  /**
+   * ISO 8601, and its meaning depends on `source`: for a calendar event this is
+   * when the event *starts*, for a task its due date, for a note the last edit,
+   * for a repo the last push. Render accordingly — an event wants an absolute
+   * date, a note wants "edited 3 days ago".
+   */
+  modifiedAt: string | null;
 }

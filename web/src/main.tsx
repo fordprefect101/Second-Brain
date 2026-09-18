@@ -6,6 +6,7 @@ import { App } from './App';
 import { Home } from './pages/Home';
 import { Inbox } from './pages/Inbox';
 import { Knowledge } from './pages/Knowledge';
+import { NoteDetail } from './pages/NoteDetail';
 import { Search } from './pages/Search';
 import { Tasks } from './pages/Tasks';
 import { Projects } from './pages/Projects';
@@ -25,30 +26,17 @@ const router = createBrowserRouter([
       { path: '/', element: <Home /> },
       { path: '/inbox', element: <Inbox /> },
       { path: '/knowledge', element: <Knowledge /> },
+      { path: '/notes/:id', element: <NoteDetail /> },
       { path: '/search', element: <Search /> },
       { path: '/tasks', element: <Tasks /> },
       { path: '/settings', element: <Settings /> },
 
-      // Navigable but empty. Real pages replace these in later phases; the routes
-      // exist now so the information architecture is testable by clicking it.
       { path: '/projects', element: <Projects /> },
-      {
-        path: '/areas',
-        element: <Placeholder title="Areas" phase="Phase 2 — needs a knowledge source" />,
-      },
-      {
-        path: '/resources',
-        element: <Placeholder title="Resources" phase="Phase 4 — Drive and Notion" />,
-      },
-      {
-        path: '/ideas',
-        element: <Placeholder title="Ideas" phase="Step 5 — routed captures land here" />,
-      },
-      {
-        path: '/goals',
-        element: <Placeholder title="Goals" phase="Phase 2 — ownership undecided" />,
-      },
 
+      // Areas, Resources, Ideas and Goals lived here as stubs while the
+      // information architecture was being tested by clicking it. Removed once
+      // this became a daily tool: Ideas and Resources are already covered by a
+      // capture's `kind`, and Areas and Goals had no owner and no data.
       { path: '*', element: <Placeholder title="Not found" phase="No such section" /> },
     ],
   },

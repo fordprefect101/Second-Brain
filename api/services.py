@@ -102,6 +102,15 @@ class Task:
     # deeper nesting would not need this interface changed.
     parent_id: str | None = None
 
+    # Which list the task belongs to — "Work", "To Read", "Shopping".
+    #
+    # First-class rather than folded into notes, because the distinction is real:
+    # a reading list and a work backlog are different kinds of thing, and flattening
+    # every list into one array throws that away. Anything consuming tasks (search,
+    # the index, an LLM reading tool output) needs it to tell "planned reading" from
+    # "planned work". Providers with a single flat list leave it None.
+    list_name: str | None = None
+
 
 @runtime_checkable
 class CalendarService(Protocol):

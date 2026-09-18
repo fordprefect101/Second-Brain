@@ -49,13 +49,40 @@ export function Home() {
     };
   }, []);
 
-  const timeOf = (event: CalendarEvent) =>
-    event.allDay
+  /**
+   * When an event is, not just what time it starts.
+   *
+   * The events route takes `days` and returns "now to now + days" — a rolling
+   * window, not a calendar day, despite the docstring saying "today". So with the
+   * default of 1, a 9am meeting *tomorrow* is in this list, and rendering it as
+   * bare "9:00 AM" on a page titled Today reads as nine o'clock this morning.
+   *
+   * The date is therefore shown for anything not today, and omitted for anything
+   * that is — a date on every row of a Today view is noise.
+   */
+  const timeOf = (event: CalendarEvent) => {
+    const time = event.allDay
       ? 'all day'
       : new Date(event.start).toLocaleTimeString(undefined, {
           hour: 'numeric',
           minute: '2-digit',
         });
+
+    if (isToday(event.start)) return time;
+
+    // daysAgo counts backwards, so the future is negative: -1 is tomorrow.
+    // Naming it beats "Thu 18 Sep" for the one case that comes up constantly.
+    const day =
+      daysAgo(event.start) === -1
+        ? 'tomorrow'
+        : new Date(event.start).toLocaleDateString(undefined, {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+          });
+
+    return `${day} · ${time}`;
+  };
 
   const capturedToday = captures.filter((c) => isToday(c.createdAt));
   const waiting = captures.filter((c) => !isToday(c.createdAt));

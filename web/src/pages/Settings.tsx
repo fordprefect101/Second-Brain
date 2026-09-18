@@ -25,7 +25,7 @@ const PHASE: Record<SourceId, string> = {
   google_drive: 'Phase 4',
   google_sheets: 'Phase 4',
   gmail: 'Phase 4',
-  github: 'Phase 4',
+  github: 'connected',
   spotify: 'Phase 4',
 };
 

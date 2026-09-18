@@ -37,7 +37,7 @@ EXCERPT_LIMIT = 500  # matches the CHECK constraint in schema.sql
 # is a genuinely confusing failure — the code is right, the index is stale, and
 # nothing says so. Folding the version into every fingerprint makes an indexer
 # change invalidate the cache automatically.
-INDEXER_VERSION = 2
+INDEXER_VERSION = 4
 
 
 @dataclass
@@ -47,6 +47,13 @@ class SearchHit:
     excerpt: str
     source: str
     rank: float
+    # What this timestamp MEANS depends on the source, and callers have to know:
+    # for a calendar event it is when the event starts, for a task its due date,
+    # for a note when the file was last edited, for a repo its last push.
+    #
+    # Carried anyway, because a result with no date is close to useless — an event
+    # called "Practice 2" tells you nothing without a when.
+    modified_at: datetime | None
 
 
 def _hash(text: str) -> str:
@@ -155,6 +162,25 @@ def index_source(
     conn.commit()
     _record_sync(conn, provider)
     return stats
+
+
+def hours_since_last_sync(conn: psycopg.Connection) -> float | None:
+    """How long since the index was last rebuilt. None if it never has been.
+
+    max(), not min(): a reindex runs every source in one pass, so the newest stamp
+    answers "when did we last reindex". Taking the oldest would instead report on
+    whichever provider is disconnected — GitHub without a token never stamps at
+    all, which would make the index look permanently stale.
+    """
+    with conn.cursor() as cur:
+        cur.execute("select max(last_sync_completed_at) as last from sync_state")
+        row = cur.fetchone()
+
+    last = row["last"] if row else None
+    if last is None:
+        return None
+
+    return (datetime.now(timezone.utc) - last).total_seconds() / 3600
 
 
 def _record_sync(conn: psycopg.Connection, provider: str) -> None:
@@ -303,12 +329,33 @@ def index_tasks(conn: psycopg.Connection, service: TaskService) -> dict[str, int
             Indexable(
                 provider_id=t.provider_id,
                 title=t.title,
-                excerpt=t.notes or "",
+                # The list is prefixed onto the excerpt as well as tagged, because
+                # excerpt is what reaches a consumer through SearchHit. A reading
+                # list item and a work item are otherwise indistinguishable once
+                # they are rows — which is how "what have we done?" once got
+                # answered with a to-do list.
+                excerpt=f"[{t.list_name}] {t.notes or ''}".strip()
+                if t.list_name
+                else (t.notes or ""),
+                # The list name is deliberately NOT a tag.
+                #
+                # It was, briefly, and it broke ranking badly. Tags are weight A —
+                # the same as a title — and these lists are named after projects
+                # ("Resume Builder", "AudioTour"). Every task in a list therefore
+                # scored as though its title were the list name, and searching
+                # "resume builder" returned seven to-do items at rank 1.000 while
+                # the actual note fell to eighth and the repo off the page.
+                #
+                # It lives in the excerpt instead (weight B, above), which still
+                # matches "To Read" without letting a list name outrank the thing
+                # the list is about.
                 tags=["task"],
                 modified_at=t.due or datetime.now(timezone.utc),
                 # Completion is part of the fingerprint so a status change
                 # reindexes even when the title is identical.
-                fingerprint=_hash(f"{t.title}\n{t.notes or ''}\n{t.completed}"),
+                fingerprint=_hash(
+                    f"{t.title}\n{t.notes or ''}\n{t.completed}\n{t.list_name or ''}"
+                ),
             )
             for t in tasks
         ],
@@ -451,7 +498,7 @@ def search(
                             else to_tsquery('english', %(prefix)s || ':*')
                        end as prefix
             )
-            select s.entity_id, s.title, s.excerpt, s.provider,
+            select s.entity_id, s.title, s.excerpt, s.provider, s.source_modified_at,
                    -- Score against whichever query actually matched, not just the
                    -- exact one: a prefix-only hit would otherwise rank 0.0 and sort
                    -- below everything. greatest() also means an exact match still
@@ -486,6 +533,7 @@ def search(
             excerpt=row["excerpt"] or "",
             source=row["provider"],
             rank=float(row["rank"]),
+            modified_at=row["source_modified_at"],
         )
         for row in rows
     ]

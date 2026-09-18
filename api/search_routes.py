@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
+import psycopg
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
@@ -41,6 +43,9 @@ class SearchResult(CamelModel):
     # (Plan.md §12).
     source: str
     rank: float
+    # Source-dependent meaning — event start, task due date, note edit, repo push.
+    # Nullable because nothing guarantees a row has one.
+    modified_at: datetime | None = None
 
 
 class IndexStats(CamelModel):
@@ -66,7 +71,12 @@ def search_endpoint(
     hits = search(conn, q, limit=limit, source=source)
     return [
         SearchResult(
-            id=h.id, title=h.title, excerpt=h.excerpt, source=h.source, rank=h.rank
+            id=h.id,
+            title=h.title,
+            excerpt=h.excerpt,
+            source=h.source,
+            rank=h.rank,
+            modified_at=h.modified_at,
         )
         for h in hits
     ]
@@ -74,11 +84,18 @@ def search_endpoint(
 
 @router.post("/search/reindex", response_model=IndexStats)
 def reindex(conn: ConnDep) -> IndexStats:
+    """Rebuild the index on demand, from the UI's 'rebuild index' button."""
+    return run_reindex(conn)
+
+
+def run_reindex(conn: psycopg.Connection) -> IndexStats:
     """Rebuild the index from every connected source.
 
-    Manual for now. A file watcher plus periodic polling would keep it current
-    automatically, but that means debouncing, partial writes, and editor temp
-    files — worth doing once the index is proven, not while it is being written.
+    A plain function rather than only a route, because startup runs this too when
+    the index is stale (api/main.py). One implementation, two callers — a second
+    copy that drifts from this one is the failure ADR-006 names.
+
+    NOTE: `conn` must have a dict_row factory. index_source reads rows by name.
 
     Every source is attempted independently. Google being disconnected must not
     stop Obsidian being indexed: one broken integration should degrade the index,
