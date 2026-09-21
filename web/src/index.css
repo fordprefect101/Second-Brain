@@ -1,16 +1,168 @@
-/* Plain CSS with custom properties. No Tailwind, no component library — a sidebar
-   and a list do not justify the dependency yet (Plan.md §4). Revisit when a real
-   design problem supplies the evidence. */
+/* Plain CSS with custom properties. No Tailwind, no component library — but no
+   longer ad-hoc either.
+
+   The old note here said a sidebar and a list do not justify the dependency, and
+   to revisit when a real design problem supplied the evidence. It did: every
+   value in this file was decided independently, so there were nine font sizes
+   between 11px and 15px, exactly one shadow, and no way to change the density of
+   the app without editing forty rules.
+
+   The answer is a token layer, not a framework — a utility framework would only be
+   a different spelling of the same scales, bought with a build step and a second
+   vocabulary. Four layers, in order:
+
+     1. Palette   — colour. The only thing that changes between light and dark.
+     2. Type      — family, size scale, tracking.
+     3. Space     — spacing, radius, elevation, focus ring.
+     4. Semantic  — what a tile's padding *is*, what a row's height *is*.
+                    Components read these, and density swaps them.
+
+   The rule for the rest of the file: rules consume tokens, they do not invent
+   values. When a component needs a number that is not on a scale, either the
+   scale is wrong or the component is. */
 
 :root {
-  --bg: #fbfbfa;
+  /* ======== 1. Palette — light ======== */
+
+  /* Warm paper rather than white. #fbfbfa was almost neutral, which under a warm
+     accent reads as slightly dirty grey; pulling it toward cream makes the same
+     green look deliberate. */
+  --bg: #faf9f6;
   --surface: #ffffff;
-  --border: #e6e4e0;
+
+  /* Recessed, for things that sit *inside* a surface: count pills, code blocks,
+     input wells. Previously these used --bg, which is correct on a page and wrong
+     inside a card — a white card cannot show a dent using the page colour. */
+  --surface-sunken: #f4f2ee;
+
+  --border: #e7e3db;
+  /* For the one-in-ten place a hairline must actually be seen: scrollbar thumbs,
+     a hovered control's edge. */
+  --border-strong: #d8d3c8;
+
   --text: #1f1e1c;
   --text-muted: #75726c;
+
   --accent: #2f6f4e;
+  --accent-hover: #275c41;
   --accent-soft: #eaf2ed;
-  --radius: 8px;
+  /* Text drawn *on* an accent fill. Was --bg, which only worked because the page
+     happened to be near-white; in dark mode the accent is a pale green and --bg is
+     near-black, so the two are not interchangeable. */
+  --accent-contrast: #ffffff;
+
+  /* Failure. --danger-soft exists so the error banner stops being the one
+     component with its own hardcoded pair of hex values and its own media query. */
+  --danger: #b3261e;
+  --danger-soft: #fdeceb;
+
+  /* Shadows are tinted, never pure black.
+     Black over warm paper reads blue-grey and muddy; a warm brown-grey reads like
+     an actual shadow on actual paper. One hue, reused at five opacities below. */
+  --shadow-hue: 30 18% 22%;
+
+  /* ---- Elevation: layered, not single ----
+
+     There was exactly one box-shadow in this file (the overlay). A single
+     `0 2px 4px` is what makes a card look like a sticker — real depth is two or
+     three shadows stacked: a tight dark one for contact, a wide soft one for the
+     cast, plus a 1px inset highlight along the top edge for the lit rim. That
+     last one is most of the effect and the part usually missing. */
+  --elev-1:
+    0 1px 1px hsl(var(--shadow-hue) / 0.04),
+    0 2px 4px -1px hsl(var(--shadow-hue) / 0.05);
+  --elev-2:
+    0 1px 1px hsl(var(--shadow-hue) / 0.04),
+    0 4px 8px -2px hsl(var(--shadow-hue) / 0.06),
+    0 14px 28px -10px hsl(var(--shadow-hue) / 0.1);
+  --elev-3:
+    0 2px 4px hsl(var(--shadow-hue) / 0.06),
+    0 12px 24px -6px hsl(var(--shadow-hue) / 0.12),
+    0 36px 64px -16px hsl(var(--shadow-hue) / 0.24);
+  --highlight: inset 0 1px 0 rgb(255 255 255 / 0.9);
+
+  /* ======== 2. Type ========
+
+     Inter for the interface, a serif for display.
+
+     The serif is the whole warm-editorial idea in one decision: a dashboard set
+     entirely in one UI sans is competent and anonymous, and the cheapest way to
+     give a personal tool a voice is to let the few largest words on screen be set
+     in something with a hand in it. It is used in exactly three places — the
+     wordmark, the greeting, a note's title — and nowhere at a size where its low
+     x-height would hurt reading.
+
+     Both stacks fall back to real system faces, so an offline load degrades to the
+     previous typography rather than to Times. */
+  --font-ui: 'Inter', ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif;
+  --font-display: 'Instrument Serif', 'Iowan Old Style', Palatino, Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* A scale, not a pile. Roughly 1.18 between steps at the small end — close
+     enough that adjacent sizes still read as one family, far enough that two
+     steps apart is unmistakable. The odd half-pixels are kept from the values
+     already in use: they were tuned against real rows and are worth preserving. */
+  --fs-00: 10.5px; /* kbd hints, all-caps labels */
+  --fs-0: 11.5px; /* meta: counts, timestamps */
+  --fs-1: 12.5px; /* secondary text, empty states */
+  --fs-2: 13.5px; /* a row inside a tile — the most common text in the app */
+  --fs-3: 15px; /* body */
+  --fs-4: 19px; /* the ask input */
+  --fs-5: 26px; /* page title */
+  --fs-6: 34px; /* the greeting, and nothing else */
+
+  /* Tracking tightens as type grows: at 34px the default spacing of a screen face
+     looks slack, and at 10.5px all-caps it looks cramped. */
+  --track-tight: -0.021em;
+  --track-snug: -0.011em;
+  --track-label: 0.07em;
+
+  /* ======== 3. Space ======== */
+
+  --sp-1: 4px;
+  --sp-2: 6px;
+  --sp-3: 8px;
+  --sp-4: 12px;
+  --sp-5: 16px;
+  --sp-6: 20px;
+  --sp-7: 24px;
+  --sp-8: 32px;
+  --sp-9: 44px;
+
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+  --r-pill: 999px;
+  /* Alias, so the rules written before the scale existed keep working. */
+  --radius: var(--r-md);
+
+  /* One focus treatment, defined once. There were three: a 2px outline, a 1px
+     outline, and a 3px ring, depending on which control you tabbed to. */
+  --ring: 0 0 0 3px var(--accent-soft);
+
+  /* ---- Motion ----
+
+     Durations on a scale, for the same reason sizes are: "how long is a hover" is
+     a decision to make once. Three is enough — a state change is either
+     acknowledging you (fast), moving something (base), or bringing something into
+     existence (slow).
+
+     Two easings, and which one is used says what is happening. Things that arrive
+     use ease-out: fast at first, settling at the end, the way something thrown
+     lands. Things that leave use ease-in: they accelerate away, because nobody
+     needs to watch a dismissal finish.
+
+     --dur-exit is separate because JavaScript knows about it too: App.tsx must hold
+     the overlay mounted for exactly this long while it animates out. */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 260ms;
+  --dur-exit: 140ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+
   --sidebar-width: 208px;
 
   /* Wider than the old 780px. This is a dashboard, not an article: the job of
@@ -38,26 +190,96 @@
   --src-github: #55585f;
   --src-github-soft: #eeeeef;
 
-  /* Failure. Matches the hue .banner.is-error already used, promoted to a token
-     so error styling stops being hardcoded in two places. */
-  --danger: #b3261e;
+  /* ======== 4. Semantic ========
+
+     The layer components actually read. Two reasons it exists rather than having
+     rules use --sp-5 directly: the name says what the number is for, and one
+     override below changes the density of the entire app. */
+
+  --tile-pad-y: 14px;
+  --tile-pad-x: var(--sp-5);
+  --tile-radius: var(--r-lg);
+  --row-pad-y: 5px;
+  --row-fs: var(--fs-2);
+  /* A card in an expanded view — the list rows behind Inbox, Projects, Knowledge.
+     Separate from the tile tokens because a tile is a container and these are its
+     contents; they tighten by different amounts. */
+  --card-pad-y: 14px;
+  --card-pad-x: var(--sp-5);
+  --bento-gap: var(--sp-5);
+  --chrome-h: 56px;
+  /* Page gutter. 44px was one of three different paddings used for "the edge of
+     the page" — the topbar's, the main's, and the overlay's. */
+  --gutter: var(--sp-8);
 
   color-scheme: light dark;
 }
 
+/* ---- Density ----
+
+   The payoff for the token layer, and the reason it came first: this is the whole
+   feature. Six values, and every tile, row and gap in the app tightens — because
+   no rule hardcodes its own spacing any more.
+
+   Two settings rather than a slider: comfortable is right when you are reading the
+   day, compact is right when there are forty open tasks and you want them all on
+   screen. Which one you want is not something the app can know. */
+:root[data-density='compact'] {
+  --tile-pad-y: 10px;
+  --tile-pad-x: var(--sp-4);
+  --row-pad-y: 3px;
+  --row-fs: 13px;
+  --card-pad-y: var(--sp-3);
+  --card-pad-x: var(--sp-4);
+  --bento-gap: var(--sp-4);
+  --gutter: var(--sp-7);
+}
+
+/* ---- Theme ----
+
+   Three states, and the third is the important one: light, dark, and *follow the
+   OS* — which was previously the only option. A personal tool is used at 9am and
+   at 11pm, and the OS is not always right about which of those you want.
+
+   The selector pattern is what makes all three work:
+     - bare :root            → light, the default
+     - the media query       → dark, unless light is explicitly chosen
+     - [data-theme='dark']   → dark, whatever the OS says
+
+   The dark palette is therefore written twice. That is deliberate: `light-dark()`
+   would express it once, but a single unsupported function takes the entire
+   palette down silently, and this file is the one place in the app where a silent
+   failure is unrecoverable. Two copies of thirty colour values, and colour values
+   are the thing least likely to change. */
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #141513;
     /* Surface was #1e1f1c on a #171815 page — about a 3% luminance step, so
        tiles barely separated from the background and the whole screen read as
        murky. Pushing the page darker and the surface lighter widens the gap;
        the border does the rest. */
     --surface: #212320;
+    --surface-sunken: #191a18;
     --border: #3a3c35;
+    --border-strong: #4c4e46;
     --text: #ececea;
     --text-muted: #9a978f;
     --accent: #7cc39a;
+    --accent-hover: #93d0ac;
     --accent-soft: #23302a;
+    --accent-contrast: #12140f;
+    --danger: #f2b8b5;
+    --danger-soft: #3a1f1d;
+
+    /* Dark elevation is a different problem, not a darker version of the same
+       one. There is no light to cast a shadow onto a near-black page, so depth
+       has to come from the rim: a near-invisible white inset along the top edge,
+       and shadows that mostly serve to separate the card from the page. */
+    --elev-1: 0 1px 2px rgb(0 0 0 / 0.3);
+    --elev-2: 0 1px 2px rgb(0 0 0 / 0.34), 0 8px 18px -6px rgb(0 0 0 / 0.42);
+    --elev-3: 0 4px 10px rgb(0 0 0 / 0.4), 0 28px 60px -14px rgb(0 0 0 / 0.62);
+    --highlight: inset 0 1px 0 rgb(255 255 255 / 0.045);
 
     /* Lighter hues, darker fills — the same five identities, inverted. Defining
        them here rather than reusing the light values matters: #7c5cbf on #1e1f1c
@@ -72,8 +294,50 @@
     --src-tasks-soft: #332a1e;
     --src-github: #a8abb2;
     --src-github-soft: #2a2b2d;
-    --danger: #f2b8b5;
   }
+}
+
+:root[data-theme='dark'] {
+  --bg: #141513;
+  --surface: #212320;
+  --surface-sunken: #191a18;
+  --border: #3a3c35;
+  --border-strong: #4c4e46;
+  --text: #ececea;
+  --text-muted: #9a978f;
+  --accent: #7cc39a;
+  --accent-hover: #93d0ac;
+  --accent-soft: #23302a;
+  --accent-contrast: #12140f;
+  --danger: #f2b8b5;
+  --danger-soft: #3a1f1d;
+
+  --elev-1: 0 1px 2px rgb(0 0 0 / 0.3);
+  --elev-2: 0 1px 2px rgb(0 0 0 / 0.34), 0 8px 18px -6px rgb(0 0 0 / 0.42);
+  --elev-3: 0 4px 10px rgb(0 0 0 / 0.4), 0 28px 60px -14px rgb(0 0 0 / 0.62);
+  --highlight: inset 0 1px 0 rgb(255 255 255 / 0.045);
+
+  --src-obsidian: #b49ae0;
+  --src-obsidian-soft: #2b2537;
+  --src-personal-os: #7cc39a;
+  --src-personal-os-soft: #23302a;
+  --src-calendar: #8ab0e4;
+  --src-calendar-soft: #212a36;
+  --src-tasks: #d7a869;
+  --src-tasks-soft: #332a1e;
+  --src-github: #a8abb2;
+  --src-github-soft: #2a2b2d;
+}
+
+/* Tells the browser to draw its own chrome — form controls, the native select
+   arrow, scrollbars — to match. Without this the Tasks list's select stays light
+   inside a dark tile. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
 * {
@@ -84,8 +348,74 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.55 ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif;
+  font: var(--fs-3) / 1.55 var(--font-ui);
+  letter-spacing: var(--track-snug);
   -webkit-font-smoothing: antialiased;
+  /* Inter is a variable font with an optical size axis: it thickens hairlines and
+     opens spacing slightly at small sizes and does the reverse at large ones. Free,
+     and the single biggest difference between "Inter is loaded" and "Inter is set
+     properly". */
+  font-optical-sizing: auto;
+}
+
+/* Numbers that change must not move the text around them.
+   A relative timestamp reflowing from "2 hours ago" to "3 hours ago", or a count
+   going 9 → 10, shifts everything after it unless the digits are one width. Set
+   globally because nearly every number in this app is a count or a time; the
+   places that disagreed already opted in individually. */
+body {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Prose is the exception — tabular figures inside a sentence look typewritten. */
+.answer-text,
+.note-body,
+.list-item-body {
+  font-variant-numeric: normal;
+}
+
+/* Selection in the accent rather than the OS blue. A small thing, but the OS blue
+   is the one colour on screen that belongs to no part of this palette. */
+::selection {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* Thin, and the page colour rather than the OS's grey trough. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--r-pill);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: content-box;
+}
+
+/* One focus treatment for everything that does not override it deliberately.
+   :focus-visible rather than :focus, so clicking a button does not ring it — the
+   ring is for people navigating by keyboard, who otherwise cannot see where they
+   are. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
 }
 
 /* ---- Layout ---- */
@@ -97,25 +427,49 @@ body {
 /* ---- Top bar ---- */
 
 /* Horizontal, not a sidebar. A bento with a 208px sidebar is a bento with one
-   fewer column, and once every section is a tile there is nothing left to list. */
+   fewer column, and once every section is a tile there is nothing left to list.
+
+   What it holds is now the other half of that argument: if the bar is not for
+   navigation, it is for the controls that belong to the whole app rather than to
+   any tile — how it looks, and how tightly it packs. */
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 44px;
-  height: 52px;
+  gap: var(--sp-5);
+  padding: 0 var(--gutter);
+  height: var(--chrome-h);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
-  background: var(--bg);
   z-index: 10;
+  background: var(--bg);
+  /* Translucent, so content scrolling under the bar is visibly *under* it rather
+     than cut off by it. Declared after the opaque background so a browser without
+     color-mix keeps the solid one instead of a transparent bar. */
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(12px) saturate(1.6);
 }
 
 .topbar-brand {
-  font-weight: 600;
+  font-family: var(--font-display);
+  /* The serif's low x-height makes it read smaller than a sans at the same size,
+     so it is set two steps up to sit level with the controls opposite. */
+  font-size: 21px;
+  font-weight: 400;
+  letter-spacing: var(--track-snug);
   color: var(--text);
   text-decoration: none;
-  letter-spacing: -0.01em;
+}
+
+.topbar-brand:hover {
+  color: var(--accent);
+}
+
+.topbar-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
 }
 
 .topbar-link {
@@ -126,6 +480,48 @@ body {
 
 .topbar-link:hover {
   color: var(--accent);
+}
+
+/* ---- Segmented control ----
+
+   For settings with two or three states where all of them should be visible at
+   once. A cycling button would be smaller, but "click to see what happens" is the
+   wrong interaction for a preference — you cannot tell what the next state is, and
+   with three states you may have to click twice to get back.
+
+   Sunken track, raised thumb: the selected option is the only one with a surface
+   and a shadow, which is the same depth language the tiles use. */
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.seg-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.seg-btn:hover {
+  color: var(--text);
+}
+
+.seg-btn[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--elev-1), var(--highlight);
 }
 
 /* ---- Overlay ---- */
@@ -140,48 +536,88 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 48px 24px;
+  padding: 48px var(--sp-7);
   overflow-y: auto;
   background: rgb(0 0 0 / 0.38);
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(3px);
 }
 
 .overlay-panel {
   position: relative;
   width: 100%;
   max-width: 860px;
-  padding: 32px 36px 40px;
+  padding: var(--sp-8) 36px var(--sp-9);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 18px 50px rgb(0 0 0 / 0.22);
+  border-radius: var(--r-xl);
+  /* The heaviest elevation in the app, and the only thing that uses it — the
+     overlay is the one surface that is genuinely floating above everything. */
+  box-shadow: var(--elev-3), var(--highlight);
 }
 
 .overlay-close {
   position: absolute;
-  top: 14px;
-  right: 16px;
+  top: var(--sp-4);
+  right: var(--sp-5);
   width: 30px;
   height: 30px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-muted);
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
 .overlay-close:hover {
-  background: var(--surface);
+  background: var(--surface-sunken);
   color: var(--text);
 }
 
 /* Edge to edge. The cap existed when this was a single column of prose; a
    dashboard wants the width, and more width means less truncation per tile. */
 .main {
-  padding: 28px 32px 64px;
+  padding: var(--sp-7) var(--gutter) 64px;
   width: 100%;
+}
+
+/* ---- The day ----
+
+   A dashboard with no header starts mid-sentence: five tiles, no statement of what
+   you are looking at. One line of display type fixes that, and it is the place the
+   serif earns its download — the largest words on screen, set in the one face in
+   this app with a hand in it.
+
+   It says the time of day rather than your name, because you already know your
+   name. "Good evening" next to five tiles is the difference between a tool you
+   opened and a tool that noticed you opened it. */
+.day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-5);
+  margin: var(--sp-1) 0 var(--sp-6);
+}
+
+.day-greeting {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-6);
+  font-weight: 400;
+  line-height: 1.08;
+  letter-spacing: var(--track-tight);
+}
+
+/* All-caps, tracked out, muted: reads as a dateline rather than as a sentence,
+   which is what keeps it from competing with the greeting beside it. */
+.day-date {
+  font-size: var(--fs-00);
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+  color: var(--text-muted);
 }
 
 /* ---- Bento grid ----
@@ -193,31 +629,72 @@ body {
    Named areas rather than spans, so the layout is readable here and reorderable
    without touching the components. */
 
-/* Masonry, not a fixed grid.
+/* Two regions, because the grid had two jobs and could only do one.
 
-   It was a grid with named areas, and Today spanned two rows on the assumption it
-   would be the tallest tile — the anchor of a Today view. With four events it is
-   the shortest, so it held two rows open and filled a third of one, leaving a
-   column of dead space taller than any tile on the page.
+   The history is worth keeping. It was a grid with named areas, where Today spanned
+   two rows on the assumption it would be the tallest tile. With four events it is
+   the shortest, so it held two rows open and filled a third of one — a column of
+   dead space taller than any tile on the page. The fix was `column-count`, which
+   packs variable-height tiles tight and cost nothing.
 
-   The real problem is that tile heights are genuinely variable: Notes has one
-   item, Tasks has six. A fixed grid can only leave gaps or stretch tiles full of
-   empty space. Columns pack them tight and cost nothing.
+   But it also gave up the thing a bento is *for*. Five equal columns say every tile
+   matters equally, which is false: Today is the anchor of a Today view and Projects
+   is periphery. Weight is the only way a layout can say that, and a masonry column
+   has exactly one width.
 
-   The trade: order runs down each column rather than across. On a surface built
-   for scanning rather than reading, that is not a cost worth solving. */
+   So: a hero band that is explicitly asymmetric, above a masonry region that packs.
+   Each region does the job it is good at, and neither is asked to do the other's. */
+
+/* The band. 1.618 : 1 — the two tiles you act on rather than read: what is
+   happening next, and what you have not filed yet. Both are tall (one has a
+   capture box, the other a list), so the pair stays level without either being
+   stretched. */
+.bento-hero {
+  display: grid;
+  grid-template-columns: 1.618fr 1fr;
+  gap: var(--bento-gap);
+  align-items: start;
+  margin-bottom: var(--bento-gap);
+  /* The ratio changes when the calendar is empty, and a jump between two layouts
+     is exactly the kind of change that needs to be legible rather than merely
+     fast. */
+  transition: grid-template-columns var(--dur-slow) var(--ease-out);
+}
+
+/* Nothing scheduled: the extra width has nothing to show, so the band splits
+   evenly rather than handing 60% of the most prominent row to an empty state.
+
+   Not applied while loading, when the calendar is empty only in the sense that
+   nobody has looked yet — collapsing on a guess and then re-expanding is a layout
+   shift charged to every day that does have events. */
+.bento-hero[data-weighted='even'] {
+  grid-template-columns: 1fr 1fr;
+}
+
+/* The rest. Masonry, for the reasons above: Notes has one item and Tasks has six,
+   and a fixed grid could only gap or stretch.
+
+   The trade is unchanged — order runs down each column rather than across — and on
+   a surface built for scanning rather than reading it is still not worth solving. */
 .bento {
   column-count: 3;
-  column-gap: 16px;
+  column-gap: var(--bento-gap);
 }
 
 .bento > * {
   /* Without this a tile splits across a column break mid-list. */
   break-inside: avoid;
-  margin-bottom: 16px;
+  margin-bottom: var(--bento-gap);
 }
 
-@media (max-width: 1200px) {
+/* Below this the hero's 1.618 : 1 leaves the wide tile too narrow to be worth the
+   asymmetry, so the band becomes two stacked full-width tiles and the masonry
+   drops to two columns. */
+@media (max-width: 1100px) {
+  .bento-hero {
+    grid-template-columns: 1fr;
+  }
+
   .bento {
     column-count: 2;
   }
@@ -238,24 +715,54 @@ body {
   min-width: 0; /* without this, long titles blow the grid column out */
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px 16px 16px;
+  border-radius: var(--tile-radius);
+  padding: var(--tile-pad-y) var(--tile-pad-x) calc(var(--tile-pad-y) + 2px);
+  /* Layered, plus the inset rim. A card with a border and no shadow is a drawn
+     rectangle; the shadow is what makes it read as sitting on the page. Kept very
+     light on purpose — there are five of these side by side, and shadows that are
+     individually tasteful are collectively a mess. */
+  box-shadow: var(--elev-1), var(--highlight);
+  transition: box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+/* Under the cursor a tile rises rather than moves. Movement would shift the row
+   you are about to click; depth says the same thing and holds still. */
+.tile:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--elev-2), var(--highlight);
+}
+
+/* The anchor tile. Same component, more room — hierarchy through size, which is
+   the one signal that survives peripheral vision.
+
+   It overrides the semantic tokens rather than its own padding, so it stays inside
+   the system: change the scale and the hero changes with it, and compact density
+   still applies below. */
+.tile-hero {
+  --tile-pad-y: 18px;
+  --tile-pad-x: var(--sp-6);
+  --tile-radius: var(--r-xl);
+}
+
+:root[data-density='compact'] .tile-hero {
+  --tile-pad-y: 12px;
+  --tile-pad-x: var(--sp-4);
 }
 
 .tile-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
 }
 
 .tile-title {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-0);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: var(--track-label);
   color: var(--text-muted);
 }
 
@@ -319,14 +826,16 @@ body {
   gap: 8px;
 }
 
+/* Sunken, not page-coloured. It sits inside a white card, and --bg is the colour
+   of the page behind the card — close enough to read as a mistake rather than as a
+   recess. */
 .tile-count {
   font-size: 11px;
-  font-variant-numeric: tabular-nums;
   color: var(--text-muted);
-  background: var(--bg);
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0 6px;
+  border-radius: var(--r-pill);
+  padding: 0 var(--sp-2);
 }
 
 /* Quiet, not hidden.
@@ -355,7 +864,7 @@ body {
 }
 
 .tile-expand:hover {
-  background: var(--bg);
+  background: var(--surface-sunken);
   color: var(--accent);
 }
 
@@ -453,11 +962,11 @@ body {
 .row {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  padding: 5px 6px 5px 9px;
-  margin-right: -6px;
-  border-radius: 0 5px 5px 0;
-  font-size: 13.5px;
+  gap: var(--sp-3);
+  padding: var(--row-pad-y) var(--sp-2) var(--row-pad-y) 9px;
+  margin-right: calc(var(--sp-2) * -1);
+  border-radius: 0 var(--r-xs) var(--r-xs) 0;
+  font-size: var(--row-fs);
   line-height: 1.45;
   border-left: 2px solid transparent;
   transition: background 0.1s ease;
@@ -466,7 +975,25 @@ body {
 /* Rows respond to the cursor. Without it the tile is a printout — nothing on
    the page moves, so nothing reads as interactive until you happen to click. */
 .row:hover {
-  background: var(--bg);
+  background: var(--surface-sunken);
+}
+
+/* The hero's width, used.
+
+   A two-column list inside the wide tile, but only past six rows and only wide
+   enough to hold them — a three-item list split in two is two lonely columns, and
+   :has is how the stylesheet asks how much content there is without the component
+   having to say. Where :has is unsupported the list stays single-column, which is
+   the current behaviour rather than a broken one. */
+@media (min-width: 1140px) {
+  .tile-hero .rows:has(> :nth-child(6)) {
+    columns: 2;
+    column-gap: var(--sp-6);
+  }
+
+  .tile-hero .rows > .row {
+    break-inside: avoid;
+  }
 }
 
 .row[data-source='obsidian'] {
@@ -592,11 +1119,16 @@ body {
    pill in the corner. It is the first thing you should want to type into, so it
    gets the largest text on screen and a focus state that actually responds. */
 .askbox {
-  padding: 16px 18px;
+  padding: var(--sp-5) var(--sp-6);
   /* Matches the bento's gap. The margin lives on .bento > * and AskBox sits
      outside it (column-count would otherwise squeeze it into one column), so
      without this it butts straight against the first row of tiles. */
-  margin-bottom: 16px;
+  margin-bottom: var(--bento-gap);
+  border-radius: var(--r-xl);
+  /* The one surface that starts at the second elevation. Everything else on the
+     page is something to read; this is the thing to type into, and it has to be
+     the most present object on screen without being the largest. */
+  box-shadow: var(--elev-2), var(--highlight);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -604,7 +1136,7 @@ body {
    but the thing that should visibly respond is the whole box. */
 .askbox:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: var(--ring), var(--elev-2), var(--highlight);
 }
 
 .askbox-input-row {
@@ -620,8 +1152,8 @@ body {
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 19px;
-  letter-spacing: -0.01em;
+  font-size: var(--fs-4);
+  letter-spacing: var(--track-snug);
   padding: 3px 0;
 }
 
@@ -639,13 +1171,13 @@ body {
    broken when it guesses wrong. */
 .askbox-mode {
   flex: 0 0 auto;
-  padding: 4px 11px;
+  padding: var(--sp-1) 11px;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg);
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
   color: var(--text-muted);
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--fs-0);
   font-weight: 500;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
@@ -662,12 +1194,15 @@ body {
 .askbox-mode[data-mode='ask'] {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--bg);
+  color: var(--accent-contrast);
 }
 
+/* A darker green, not a transparent one. Fading a filled pill toward the page
+   colour is the hover state that looks like the button is being disabled. */
 .askbox-mode[data-mode='ask']:hover {
-  opacity: 0.88;
-  color: var(--bg);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--accent-contrast);
 }
 
 .askbox-clear {
@@ -684,7 +1219,7 @@ body {
 }
 
 .askbox-clear:hover {
-  background: var(--bg);
+  background: var(--surface-sunken);
   color: var(--text);
 }
 
@@ -712,13 +1247,13 @@ body {
 /* A hint, not a badge. Discoverable if you look at the box, ignorable if not. */
 .askbox-kbd {
   flex: 0 0 auto;
-  font-size: 10.5px;
+  font-size: var(--fs-00);
   color: var(--text-muted);
   opacity: 0.6;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   padding: 1px 5px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
 }
 
 .askbox:focus-within .askbox-kbd {
@@ -728,7 +1263,26 @@ body {
 .askbox-results {
   margin-top: 10px;
   border-top: 1px solid var(--border);
-  padding-top: 8px;
+  padding-top: var(--sp-3);
+}
+
+/* Keep the title and its source together.
+ *
+ * Everywhere else .row-main takes the free space and pushes the trailing label to
+ * the right edge, which is correct in a tile: the timestamps line up in a column
+ * you can read down. The ask box is the full width of the page, so the same rule
+ * put "github" seventeen hundred pixels from the result it described — two facts
+ * on one line with no way to associate them.
+ *
+ * Here the title takes only what it needs and the label follows it. Same
+ * component, opposite alignment, because the widths are not comparable. */
+.askbox-results .row-main {
+  flex: 0 1 auto;
+}
+
+.askbox-results .row-trail {
+  margin-left: var(--sp-3);
+  opacity: 0.75;
 }
 
 /* ---- Answer ---- */
@@ -847,6 +1401,71 @@ body {
   border-left-color: var(--src-tasks);
 }
 
+/* ---- List chips ----
+
+   The expanded Tasks view's list picker. The tile uses a select because seven
+   list names do not fit in a third of the grid; here they do, and seeing which
+   lists exist — including the empty ones — is half of what the expanded view is
+   for. A dropdown hides exactly that. */
+
+.list-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-5);
+}
+
+.list-chips .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-4);
+  font-size: var(--fs-1);
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+/* The selected chip borrows the Tasks source colour rather than the app accent.
+   On a page that is entirely one source, the identity colour is the one that
+   means something. */
+.list-chips .chip.is-selected {
+  background: var(--src-tasks-soft);
+  color: var(--src-tasks);
+  border-color: transparent;
+}
+
+/* How many are in a list you are not looking at — the reason to switch, and the
+   thing the tile's dropdown could never show you. */
+.chip-count {
+  font-size: var(--fs-00);
+  opacity: 0.75;
+}
+
+/* Add, in the expanded view. Wider and quieter than the tile's version: it sits
+   under a full list rather than inside a preview, so it reads as the end of the
+   list rather than as a form. */
+.task-add-row {
+  width: 100%;
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  font: inherit;
+  font-size: var(--fs-2);
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.task-add-row::placeholder {
+  color: var(--text-muted);
+}
+
+.task-add-row:focus {
+  outline: none;
+  border-color: var(--src-tasks);
+  box-shadow: 0 0 0 3px var(--src-tasks-soft);
+}
+
 /* ---- Grid ---- */
 
 /* Today's two-column split: what is happening, next to what is waiting.
@@ -867,8 +1486,9 @@ body {
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 18px 18px 8px;
+  border-radius: var(--r-lg);
+  box-shadow: var(--elev-1), var(--highlight);
+  padding: 18px 18px var(--sp-3);
 }
 
 .panel-head {
@@ -953,10 +1573,15 @@ body {
   margin-bottom: 28px;
 }
 
+/* The second of the serif's three jobs: the title of an expanded view. An overlay
+   opens over the grid, and a display-set title is what tells you at a glance that
+   you are now in a place rather than still on the dashboard. */
 .page-header h1 {
   margin: 0;
-  font-size: 26px;
-  letter-spacing: -0.02em;
+  font-family: var(--font-display);
+  font-size: var(--fs-5);
+  font-weight: 400;
+  letter-spacing: var(--track-tight);
 }
 
 .page-subtitle {
@@ -966,10 +1591,10 @@ body {
 }
 
 .section-heading {
-  margin: 34px 0 12px;
-  font-size: 12px;
+  margin: var(--sp-8) 0 var(--sp-4);
+  font-size: var(--fs-0);
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: var(--track-label);
   color: var(--text-muted);
 }
 
@@ -1026,11 +1651,18 @@ body {
   gap: 8px;
 }
 
+/* Density reaches here too.
+ *
+ * It did not, and that was a real hole in the control: the toggle tightened the
+ * dashboard and left every expanded view exactly as it was, so switching to
+ * compact and then opening Projects put you back in comfortable spacing. A
+ * preference that silently stops applying halfway through the app is worse than
+ * not offering it. */
 .list-item {
-  padding: 14px 16px;
+  padding: var(--card-pad-y) var(--card-pad-x);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--r-md);
 }
 
 .list-item.is-muted {
@@ -1097,11 +1729,16 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+/* The third. A note is the one genuinely editorial object in the app — someone
+   wrote it, in prose, to be read — and it is the place the serif is least
+   decorative. */
 .note-title {
-  margin: 0 0 10px;
-  font-size: 28px;
-  letter-spacing: -0.02em;
-  line-height: 1.25;
+  margin: 0 0 var(--sp-3);
+  font-family: var(--font-display);
+  font-size: var(--fs-6);
+  font-weight: 400;
+  letter-spacing: var(--track-tight);
+  line-height: 1.15;
 }
 
 .note-meta {
@@ -1193,16 +1830,19 @@ body {
 
 /* Rows that open something. Inert rows must not pretend to be clickable —
    the old search results looked identical to links and did nothing. */
+/* Depth on hover only, and only here: a shadow on every row of a thirty-result
+   search list is texture, not hierarchy. */
 .list-item.is-clickable {
   display: block;
   color: inherit;
   text-decoration: none;
-  transition: border-color 0.12s ease, transform 0.12s ease;
+  transition: border-color 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
 }
 
 .list-item.is-clickable:hover {
   border-color: var(--accent);
   transform: translateX(1px);
+  box-shadow: var(--elev-1);
 }
 
 .kind-idea,
@@ -1247,16 +1887,24 @@ body {
 
 /* ---- Capture box ---- */
 
+/* Sunken, because it lives inside the Inbox tile.
+
+   It was a white card with a border sitting on a white card with a border — a box
+   inside a box, which is the most common way a nested input ends up looking like a
+   rendering bug. An input well is the opposite of a card: it goes *into* the
+   surface, not on top of it. */
 .capture {
-  margin-bottom: 24px;
-  padding: 12px;
-  background: var(--surface);
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-4);
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--r-md);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .capture:focus-within {
   border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 
 .capture-input {
@@ -1310,14 +1958,22 @@ body {
 }
 
 .button {
-  padding: 6px 14px;
+  padding: var(--sp-2) 14px;
   font: inherit;
   font-size: 14px;
-  color: var(--bg);
+  font-weight: 500;
+  color: var(--accent-contrast);
   background: var(--accent);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   cursor: pointer;
+  box-shadow: var(--elev-1);
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: var(--elev-2);
 }
 
 .button:disabled {
@@ -1357,22 +2013,20 @@ body {
   color: var(--text);
 }
 
+/* Tokens, and the media query that used to follow this rule is gone.
+
+   Worth noticing why: hardcoded hex plus `prefers-color-scheme` cannot respond to
+   the theme toggle — force dark on a light OS and the error banner alone would stay
+   pale pink. Any component that reads the palette directly is a component the theme
+   control silently does not reach. */
 .capture-error,
 .banner.is-error {
   margin: 10px 0 0;
-  padding: 8px 12px;
+  padding: var(--sp-3) var(--sp-4);
   font-size: 13px;
-  color: #b3261e;
-  background: #fdeceb;
-  border-radius: 6px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .capture-error,
-  .banner.is-error {
-    color: #f2b8b5;
-    background: #3a1f1d;
-  }
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--r-sm);
 }
 
 /* ---- Search ---- */
@@ -1395,6 +2049,7 @@ body {
 .search-input:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 
 /* .rank removed with the score it styled. ts_rank is a debug number — 0.998 next
@@ -1433,17 +2088,27 @@ body {
   color: var(--accent);
 }
 
-.note-body {
+/* The inline peek at a note's raw text, inside the Knowledge list.
+   Renamed from .note-body, which it used to share with the note reading view.
+
+   Same class, same specificity, defined twice, four hundred lines apart — so this
+   one silently won and a note's prose was rendered as 12px monospace in a grey
+   well. Someone's writing, formatted like a stack trace, on the most editorial
+   surface in the app.
+
+   Here the code-block look is right: it is a raw excerpt you glance at, capped and
+   scrollable. In NoteDetail it was wrong. Two jobs, two names. */
+.note-preview {
   margin: 8px 0 0;
-  padding: 12px;
+  padding: var(--sp-4);
   max-height: 400px;
   overflow: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;
-  background: var(--bg);
-  border-radius: 6px;
+  background: var(--surface-sunken);
+  border-radius: var(--r-sm);
 }
 
 @media (max-width: 720px) {
@@ -1490,6 +2155,18 @@ body {
 .task-due {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* Which list a task belongs to, shown only in the across-lists view where it is
+   the one thing distinguishing two rows that otherwise look identical. */
+.task-list-name {
+  flex: 0 0 auto;
+  padding: 1px var(--sp-2);
+  font-size: var(--fs-00);
+  color: var(--src-tasks);
+  background: var(--src-tasks-soft);
+  border-radius: var(--r-pill);
+  white-space: nowrap;
 }
 
 .checkbox {
@@ -1555,6 +2232,42 @@ body {
   }
 }
 
+/* The exits.
+
+   These are the halves that were missing, and their absence was the single
+   roughest moment in the app: opening a tile animated, closing it did not. The
+   panel simply ceased to exist between two frames — which reads less like a fast
+   app and more like one that crashed the view you were looking at.
+
+   They are deliberately not the entrances reversed. An exit is shorter (140ms
+   against 200ms) and eased *in* rather than out, so it accelerates away instead of
+   settling. Symmetry would be the obvious choice and the wrong one: you are
+   already looking at the thing that is arriving, and you have already stopped
+   caring about the thing that is leaving. */
+@keyframes overlay-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes panel-out {
+  to {
+    opacity: 0;
+    /* Down and slightly smaller — it retreats the way it came, rather than
+       shrinking toward a centre point like a dialog being dismissed. */
+    transform: translateY(6px) scale(0.99);
+  }
+}
+
+/* Content arriving after its skeleton, and an answer arriving after 30 seconds of
+   waiting. Both used to pop in. */
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
 @keyframes row-in {
   from {
     opacity: 0;
@@ -1574,20 +2287,93 @@ body {
 }
 
 .overlay-panel {
-  animation: panel-in 0.2s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  animation: panel-in 0.2s var(--ease-out) both;
 }
 
+/* Applied by App.tsx for --dur-exit milliseconds before it actually navigates.
+   React cannot animate an unmounting element on its own — the route changes and the
+   node is gone in the same frame — so the component holds it on screen for exactly
+   as long as this takes, and CSS does the rest.
+
+   Pointer events off, because during those 140ms the panel is still in the DOM and
+   a second click on a link inside a closing overlay would navigate somewhere you
+   are in the middle of leaving. */
+.overlay.is-exiting {
+  animation: overlay-out var(--dur-exit) var(--ease-in) both;
+  pointer-events: none;
+}
+
+.overlay.is-exiting .overlay-panel {
+  animation: panel-out var(--dur-exit) var(--ease-in) both;
+}
+
+/* Rows replacing their skeleton, and the answer replacing the counter. */
+.tile-body > .rows,
+.askbox-results,
+.answer {
+  animation: fade-rise var(--dur-base) var(--ease-out) both;
+}
+
+.answer {
+  animation-duration: var(--dur-slow);
+}
+
+/* ---- Press feedback ----
+
+   Every control in the app had a hover state and nothing on click, so a press
+   registered only when its result arrived — which for the ask button is thirty
+   seconds later. A 2% dip is below the threshold of looking like an animation and
+   above the threshold of feeling like a button. */
+.button:active:not(:disabled),
+.chip:active,
+.seg-btn:active,
+.tile-expand:active,
+.askbox-mode:active,
+.askbox-clear:active,
+.overlay-close:active {
+  transform: scale(0.97);
+}
+
+/* ---- Theme change ----
+
+   Flipping light to dark repainted every surface in one frame, which at a full
+   screen of white going to near-black is genuinely unpleasant. The class is added
+   by lib/prefs.ts for the length of the fade and then removed — it is not left on,
+   because a permanent colour transition would also mean every hover fades in, and
+   hovers should be instant.
+
+   Named surfaces rather than `*`: transitioning every element on the page is how a
+   theme fade turns into a frame-rate problem on a long list. */
+.is-theming body,
+.is-theming .topbar,
+.is-theming .tile,
+.is-theming .seg,
+.is-theming .seg-btn,
+.is-theming .capture,
+.is-theming .overlay-panel,
+.is-theming .list-item,
+.is-theming .panel {
+  transition:
+    background-color var(--dur-base) ease,
+    border-color var(--dur-base) ease,
+    color var(--dur-base) ease,
+    box-shadow var(--dur-base) ease;
+}
+
+.bento-hero > *,
 .bento > * {
   animation: tile-in 0.22s ease both;
 }
 
-/* A short stagger so the grid assembles rather than flashing into place. Capped
-   at five — beyond that the last tile feels late rather than sequenced. */
-.bento > *:nth-child(1) { animation-delay: 0.02s; }
-.bento > *:nth-child(2) { animation-delay: 0.05s; }
-.bento > *:nth-child(3) { animation-delay: 0.08s; }
-.bento > *:nth-child(4) { animation-delay: 0.11s; }
-.bento > *:nth-child(5) { animation-delay: 0.14s; }
+/* A short stagger so the grid assembles rather than flashing into place. It runs
+   hero band first, then the masonry region, which is also the order they are read
+   in — the sequence is doing the same job as the layout. Capped at five: beyond
+   that the last tile feels late rather than sequenced. */
+.bento-hero > *:nth-child(1) { animation-delay: 0.02s; }
+.bento-hero > *:nth-child(2) { animation-delay: 0.05s; }
+.bento > *:nth-child(1) { animation-delay: 0.08s; }
+.bento > *:nth-child(2) { animation-delay: 0.11s; }
+.bento > *:nth-child(3) { animation-delay: 0.14s; }
 
 /* New rows arriving — a captured thought, a just-added task. */
 .row.is-new {
@@ -1618,8 +2404,36 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .overlay,
   .overlay-panel,
+  .overlay.is-exiting,
+  .overlay.is-exiting .overlay-panel,
+  .bento-hero > *,
   .bento > *,
+  .tile-body > .rows,
+  .askbox-results,
+  .answer,
   .row.is-new {
     animation: none;
+  }
+
+  /* The press dip goes too. App.tsx checks the same query and skips the exit
+     animation entirely rather than waiting out a duration that no longer
+     animates anything. */
+  .button:active:not(:disabled),
+  .chip:active,
+  .seg-btn:active,
+  .tile-expand:active,
+  .askbox-mode:active,
+  .askbox-clear:active,
+  .overlay-close:active {
+    transform: none;
+  }
+
+  /* Transitions too, not just keyframes. A request not to animate is not a request
+     to animate more cheaply — and `transition: none` on everything is one line
+     against auditing every rule that has one. */
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
   }
 }

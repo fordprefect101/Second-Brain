@@ -4,6 +4,56 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Personal OS</title>
+
+    <!--
+      Inline SVG rather than a file: it is two shapes, and a request that 404s on
+      every load (which is what was happening) is worse than no favicon. The green
+      is --accent, hardcoded here because a data URI cannot read a custom property.
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f6f4e'/%3E%3Ccircle cx='16' cy='16' r='5.5' fill='%23faf9f6'/%3E%3C/svg%3E"
+    />
+
+    <!--
+      Theme and density, applied before React mounts.
+
+      This has to be a blocking inline script rather than an effect. The preference
+      lives in localStorage, and React cannot read it until after first paint — so
+      forcing dark on a light OS would flash a white page for one frame every single
+      load. Four lines here, and it never happens.
+
+      It is deliberately duplicated logic (lib/prefs.ts owns it afterwards) and
+      deliberately wrapped: localStorage throws outright in some privacy modes, and
+      a theme preference is not worth a blank app.
+    -->
+    <script>
+      try {
+        var root = document.documentElement;
+        root.dataset.theme = localStorage.getItem('personal-os:theme') || 'system';
+        root.dataset.density = localStorage.getItem('personal-os:density') || 'cozy';
+      } catch (e) {
+        /* no stored preference available; the CSS defaults stand */
+      }
+    </script>
+
+    <!--
+      Inter for the interface, Instrument Serif for the three places that are
+      display type. preconnect because the CSS and the font files come from two
+      different hosts, and the second connection is otherwise not opened until the
+      first has been parsed.
+
+      display=swap, not block: this is a local-first tool that has to be usable
+      offline, so text renders immediately in the fallback stack and reflows when
+      Inter lands. Both stacks in index.css name real system faces for exactly that
+      case — offline degrades to the previous typography, not to Times.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&family=Instrument+Serif:ital@0;1&display=swap"
+    />
   </head>
   <body>
     <div id="root"></div>

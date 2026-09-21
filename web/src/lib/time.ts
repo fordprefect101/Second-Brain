@@ -34,6 +34,37 @@ export function daysAgo(iso: string): number {
   return Math.round(diff / 86_400_000);
 }
 
+/**
+ * 'Good morning' / 'Good evening' — the page's opening line.
+ *
+ * By the wall clock rather than by anything clever. The 2am case is separate on
+ * purpose: "Good morning" at 2am is wrong in a way that reads as a bug, and a tool
+ * this personal may as well notice.
+ */
+export function greeting(now = new Date()): string {
+  const hour = now.getHours();
+  if (hour < 5) return 'Still up';
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  if (hour < 22) return 'Good evening';
+  return 'Good night';
+}
+
+/**
+ * 'Sunday, 21 September' — the dateline beside the greeting.
+ *
+ * No year: a Today view is never showing a different one, and it is one more number
+ * on a surface that already has plenty. Locale-formatted, like every other date in
+ * this file, so the day/month order follows the reader rather than this repo.
+ */
+export function todayLabel(now = new Date()): string {
+  return now.toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}
+
 /** '2 hours ago', 'yesterday', 'just now'. */
 export function relativeTime(iso: string): string {
   const seconds = (Date.parse(iso) - Date.now()) / 1000;

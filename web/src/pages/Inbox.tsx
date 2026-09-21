@@ -8,6 +8,7 @@ import {
 } from '../api/captures';
 import { ApiError } from '../api/client';
 import { CaptureBox } from '../components/CaptureBox';
+import { ListSkeleton } from '../components/Tile';
 import { relativeTime } from '../lib/time';
 
 /**
@@ -115,9 +116,11 @@ export function Inbox() {
         </div>
       )}
 
+      {loading && <ListSkeleton rows={4} />}
+
       <ul className="list">
         {captures.map((capture) => (
-          <li key={capture.id} className="list-item">
+          <li key={capture.id} className="list-item" data-source="personal_os">
             <div className="list-item-meta">
               <span className={`kind kind-${capture.kind}`}>{capture.kind}</span>
               <time dateTime={capture.createdAt}>{relativeTime(capture.createdAt)}</time>

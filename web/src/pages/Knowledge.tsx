@@ -3,6 +3,7 @@ import type { Note } from '../types';
 import { getNote, listNotes, type NoteDetail } from '../api/notes';
 import { ApiError } from '../api/client';
 import { SourceBadge } from '../components/SourceBadge';
+import { ListSkeleton } from '../components/Tile';
 import { relativeTime } from '../lib/time';
 
 /**
@@ -71,9 +72,11 @@ export function Knowledge() {
         </div>
       )}
 
+      {loading && <ListSkeleton rows={5} />}
+
       <ul className="list">
         {notes.map((note) => (
-          <li key={note.id} className="list-item">
+          <li key={note.id} className="list-item" data-source="obsidian">
             <div className="list-item-meta">
               <SourceBadge source={note.source} />
               <time dateTime={note.modifiedAt}>{relativeTime(note.modifiedAt)}</time>
@@ -90,7 +93,7 @@ export function Knowledge() {
 
             {openId === note.id ? (
               detail ? (
-                <pre className="note-body">{detail.body}</pre>
+                <pre className="note-preview">{detail.body}</pre>
               ) : (
                 <p className="list-item-body">Loading…</p>
               )

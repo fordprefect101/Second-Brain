@@ -9,6 +9,7 @@ import {
   type Repository,
 } from '../api/github';
 import { SourceBadge } from '../components/SourceBadge';
+import { ListSkeleton } from '../components/Tile';
 import { relativeTime } from '../lib/time';
 
 /**
@@ -107,9 +108,11 @@ export function Projects() {
 
       {error && <p className="banner is-error">{error}</p>}
 
+      {loading && <ListSkeleton rows={5} />}
+
       <ul className="list">
         {repos.map((repo) => (
-          <li key={repo.id} className="list-item">
+          <li key={repo.id} className="list-item" data-source="github">
             <div className="list-item-meta">
               <SourceBadge source="github" />
               {repo.private && <span className="kind">private</span>}

@@ -20,7 +20,13 @@ import {
 import { AskBox } from '../components/AskBox';
 import { CaptureBox } from '../components/CaptureBox';
 import { Tile, TileEmpty, TileError, TileSkeleton } from '../components/Tile';
-import { daysAgo, isToday, relativeTime } from '../lib/time';
+import { daysAgo, greeting, isToday, relativeTime, todayLabel } from '../lib/time';
+import {
+  publishTaskChange,
+  selectTaskList,
+  useSelectedTaskList,
+  useTaskChanges,
+} from '../lib/tasks';
 
 /**
  * Today — everything on one surface.
@@ -37,7 +43,9 @@ import { daysAgo, isToday, relativeTime } from '../lib/time';
  * notes. Each tile degrades on its own, which is the same reason the old version
  * used it and matters more now that there are six.
  */
-const SELECTED_LIST_KEY = 'personal-os:tasks:list';
+/* The selected list's storage key moved to lib/tasks, which now owns it — the
+   expanded view needs the same value, and two components reading one key is how
+   they ended up disagreeing about it. */
 
 /** How long a completed task stays undoable before the write actually fires. */
 const UNDO_WINDOW_MS = 4500;
@@ -96,13 +104,11 @@ export function Home() {
   // screen. It read "23" above six rows from one list, because the count was
   // every open task and the body was one list. Two true numbers, shown together,
   // making a false impression.
-  const [selectedList, setSelectedList] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(SELECTED_LIST_KEY);
-    } catch {
-      return null;
-    }
-  });
+  //
+  // Now lifted again, out of this component entirely (lib/tasks): the expanded
+  // view has to show the same list, and it is mounted at the same time as this
+  // one, so the choice cannot live in either component's state.
+  const selectedList = useSelectedTaskList();
 
   const load = useCallback(() => {
     setLoading(true);
@@ -194,14 +200,32 @@ export function Home() {
     taskLists.find((l) => l.id === selectedList)?.id ?? taskLists[0]?.id ?? null;
   const shownTasks = open.filter((t) => t.listId === activeList);
 
-  function chooseList(id: string) {
-    setSelectedList(id);
-    try {
-      localStorage.setItem(SELECTED_LIST_KEY, id);
-    } catch {
-      /* the selection still works for this session */
+  // Writes to the shared store, so the expanded view follows — and so does this
+  // tile when the choice is made over there instead.
+  const chooseList = selectTaskList;
+
+  /**
+   * Writes made in the expanded view, applied here.
+   *
+   * Not a refetch. The two views hold two arrays and the overlay renders over a
+   * still-mounted grid, so adding a task in the expanded Tasks page used to leave
+   * this tile showing a list that did not contain it. Re-fetching would cost five
+   * seconds and a screen of skeletons to learn one fact this already knows.
+   *
+   * Idempotent by construction, because this also hears its own publishes.
+   */
+  useTaskChanges((change) => {
+    if (change.kind === 'completed') {
+      setTasks((current) => current.filter((t) => t.id !== change.task.id));
+      setPending((current) => current.filter((t) => t.id !== change.task.id));
+    } else {
+      setTasks((current) =>
+        current.some((t) => t.id === change.task.id)
+          ? current
+          : [change.task, ...current],
+      );
     }
-  }
+  });
 
   /**
    * Ticking a task off, with a window to change your mind.
@@ -220,10 +244,16 @@ export function Home() {
     setPending((current) => [...current, task]);
 
     const timer = setTimeout(() => {
+      // Announced when the write actually fires, not when the row is ticked.
+      // During the undo window nothing has been sent, so the expanded view is
+      // right to keep showing the task — it is still open.
+      publishTaskChange({ kind: 'completed', task });
+
       void completeTask(task.id).catch(() => {
         // Put it back. The task is still open in Google, so the tile showing it
         // again is the truthful state, not a rollback of something that happened.
         setTasks((current) => [task, ...current.filter((t) => t.id !== task.id)]);
+        publishTaskChange({ kind: 'restored', task });
       });
       setPending((current) => current.filter((t) => t.id !== task.id));
       timers.current.delete(task.id);
@@ -247,6 +277,7 @@ export function Home() {
 
   async function add(listId: string, title: string) {
     const created = await createTask(listId, title);
+    publishTaskChange({ kind: 'added', task: created });
     // Prepended, not appended. The tile shows the first few of a list that can
     // hold twenty, so appending put a new task off the end of the preview — it
     // was in state and invisible, which reads exactly like a broken write.
@@ -257,16 +288,38 @@ export function Home() {
 
   return (
     <>
+      {/* The page says what it is before it shows you anything. Five tiles and no
+          header starts mid-sentence — and the greeting is the one line on this
+          surface that is about you rather than about your data. */}
+      <div className="day-head">
+        <h1 className="day-greeting">{greeting()}</h1>
+        <span className="day-date">{todayLabel()}</span>
+      </div>
+
       {/* Outside .bento: with column-count, a child becomes a column item, and
           Ask has to span the full width. */}
       <AskBox />
 
-      <div className="bento">
+      {/* The hero band: the two tiles you act on rather than read. Explicitly
+          asymmetric — 1.618 : 1 — because the masonry region below can only make
+          every tile the same width, and equal width says every tile matters
+          equally. On a Today view that is false.
+
+          Except on a day with nothing scheduled, when it is false the other way.
+          Giving 60% of the most prominent row to the words "Nothing scheduled" is
+          the same dead-space bug the old fixed grid had, just moved. So the weight
+          follows the content: an empty calendar stops outranking a full inbox. */}
+      <div className="bento-hero" data-weighted={loading || events.length > 0 ? 'today' : 'even'}>
 
       {/* No expandTo: there is no calendar page yet, and an expand button that
           lands on "not found" is worse than no expand button. It gets one when
           the page exists. */}
-      <Tile title="Today" count={events.length} accent="google_calendar" className="area-today">
+      <Tile
+        title="Today"
+        count={events.length}
+        accent="google_calendar"
+        className="area-today tile-hero"
+      >
         {loading ? (
           <TileSkeleton rows={4} />
         ) : errors.events ? (
@@ -283,8 +336,11 @@ export function Home() {
         ) : events.length === 0 ? (
           <TileEmpty>Nothing scheduled.</TileEmpty>
         ) : (
+          // Eight rather than six: the hero is wide enough to run this list in two
+          // columns past six items (index.css, .tile-hero .rows), so the extra
+          // width buys more of the day instead of more whitespace.
           <ul className="rows">
-            {events.slice(0, 6).map((event) => (
+            {events.slice(0, 8).map((event) => (
               <li key={event.id} className="row" data-source="google_calendar">
                 <span className="row-lead">{timeOf(event)}</span>
                 <span className="row-main">{event.title}</span>
@@ -324,6 +380,13 @@ export function Home() {
           </ul>
         )}
       </Tile>
+
+      </div>
+
+      {/* Everything else. Masonry, because these three have genuinely variable
+          heights — Notes may have one item and Tasks six — and a fixed grid could
+          only leave gaps or stretch tiles full of empty space. */}
+      <div className="bento">
 
       {/* count is the SELECTED list, not every open task. It used to read "23"
           above six rows from one list — both numbers true, the pair misleading. */}

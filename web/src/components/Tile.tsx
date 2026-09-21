@@ -116,6 +116,35 @@ export function TileSkeleton({ rows = 4 }: { rows?: number }) {
 }
 
 /**
+ * The same idea one level up: placeholder cards for an expanded view.
+ *
+ * The dashboard solved loading properly and the pages it expands into did not —
+ * they printed the word "Loading…" into a subtitle and rendered nothing else, so
+ * opening Tasks gave you a panel two lines tall that then jumped to full height
+ * when the data landed. Same failure the tiles had before TileSkeleton, in the
+ * place you look at *after* clicking something, which is when you are least
+ * willing to wait.
+ *
+ * Card-shaped rather than bar-shaped because that is what these lists hold — a
+ * skeleton is only useful if it occupies roughly the space the real thing will.
+ */
+export function ListSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <ul className="list" aria-hidden="true">
+      {Array.from({ length: rows }, (_, i) => (
+        <li key={i} className="list-item">
+          <div className="skeleton">
+            {/* A short bar for the meta line, a long one for the title. */}
+            <div className="skeleton-row" style={{ width: '22%' }} />
+            <div className="skeleton-row" style={{ width: `${78 - i * 9}%` }} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
  * What a tile shows when its source failed.
  *
  * The case this exists for: allSettled swallows rejections, so a GitHub token

@@ -105,9 +105,19 @@ export function Settings() {
       <ul className="list">
         {Object.values(SOURCES).map((source) => {
           const isGoogle = GOOGLE_SOURCES.includes(source.id);
+          // GitHub belongs in this list. Without it, PHASE supplied its label —
+          // which is the string 'connected' — while the style said otherwise, so
+          // the same word appeared twice on one screen in two different colours,
+          // one meaning connected and one meaning not yet built.
+          //
+          // This asserts rather than checks, like personal_os and obsidian above
+          // it: configured at build time, so a revoked token still reads as
+          // connected here until the Projects tile says otherwise. Worth replacing
+          // with a real status probe when one exists.
           const live =
             source.id === 'personal_os' ||
             source.id === 'obsidian' ||
+            source.id === 'github' ||
             (isGoogle && google?.connected);
           return (
             <li key={source.id} className="list-item connection-row">
