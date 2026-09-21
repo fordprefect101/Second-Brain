@@ -27,6 +27,14 @@ export interface Task {
   notes: string | null;
   parentId: string | null;
   source: string;
+  /** Which list this belongs to. Name to display, id to write against. */
+  listName: string | null;
+  listId: string | null;
+}
+
+export interface TaskList {
+  id: string;
+  name: string;
 }
 
 /**
@@ -47,6 +55,36 @@ export const listTasks = () => api.get<Task[]>('/tasks');
 export function completeTask(id: string): Promise<Task> {
   // id is 'listId/taskId' — a Google task is only addressable with its list.
   return api.post<Task>(`/tasks/${id}/complete`);
+}
+
+/**
+ * Every list, including empty ones.
+ *
+ * Separate from listTasks because a list with no tasks cannot be derived from
+ * them — and that is exactly when it matters, since a new "To Read" list is
+ * empty at the moment you first want to add to it.
+ */
+export const listTaskLists = () => api.get<TaskList[]>('/tasks/lists');
+
+/**
+ * Make a new list.
+ *
+ * The last gap in owning tasks from here — reading lists, reading, completing
+ * and adding tasks all worked, but a list that did not exist yet had to be
+ * created in Google Tasks itself. Which is the case that actually comes up: a
+ * new "To Read" is empty exactly when you first want to put something in it.
+ */
+export const createTaskList = (name: string) =>
+  api.post<TaskList>('/tasks/lists', { name });
+
+export function createTask(
+  listId: string,
+  title: string,
+  notes?: string,
+): Promise<Task> {
+  // listId is required and never defaulted: a book landing in a work backlog is
+  // wrong in a way that is easy not to notice.
+  return api.post<Task>('/tasks', { listId, title, notes });
 }
 
 /** Full-page redirect, not fetch: the user must see and interact with Google. */

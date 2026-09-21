@@ -19,6 +19,15 @@ export function CaptureBox({ onCaptured }: { onCaptured: (item: CaptureItem) => 
   const [kind, setKind] = useState<CaptureKind>('note');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [active, setActive] = useState(false);
+
+  // The kind chips and the button only appear once you are actually capturing.
+  // Collapsed, this is one line; expanded it is the full form it always was.
+  //
+  // It sits inside the Inbox tile, where at full height it took most of the tile
+  // and left room for a single inbox item — a panel called Inbox that mostly was
+  // not one. Nothing is removed, only deferred until it is relevant.
+  const expanded = active || body.trim().length > 0;
 
   async function submit() {
     const trimmed = body.trim();
@@ -51,6 +60,8 @@ export function CaptureBox({ onCaptured }: { onCaptured: (item: CaptureItem) => 
         className="capture-input"
         value={body}
         onChange={(e) => setBody(e.target.value)}
+        onFocus={() => setActive(true)}
+        onBlur={() => setActive(false)}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
             e.preventDefault();
@@ -58,28 +69,31 @@ export function CaptureBox({ onCaptured }: { onCaptured: (item: CaptureItem) => 
           }
         }}
         placeholder="Capture a thought…"
-        rows={2}
-        autoFocus
+        rows={expanded ? 2 : 1}
       />
 
-      <div className="capture-actions">
-        <div className="capture-kinds">
-          {CAPTURE_KINDS.map((k) => (
-            <button
-              key={k}
-              type="button"
-              className={k === kind ? 'chip is-selected' : 'chip'}
-              onClick={() => setKind(k)}
-            >
-              {k}
-            </button>
-          ))}
-        </div>
+      {expanded && (
+        // onMouseDown, not onClick: blur fires first on click and would collapse
+        // the form out from under the button before it registered.
+        <div className="capture-actions" onMouseDown={(e) => e.preventDefault()}>
+          <div className="capture-kinds">
+            {CAPTURE_KINDS.map((k) => (
+              <button
+                key={k}
+                type="button"
+                className={k === kind ? 'chip is-selected' : 'chip'}
+                onClick={() => setKind(k)}
+              >
+                {k}
+              </button>
+            ))}
+          </div>
 
-        <button type="submit" className="button" disabled={!body.trim() || saving}>
-          {saving ? 'Saving…' : 'Capture'}
-        </button>
-      </div>
+          <button type="submit" className="button" disabled={!body.trim() || saving}>
+            {saving ? 'Saving…' : 'Capture'}
+          </button>
+        </div>
+      )}
 
       {error && <p className="capture-error">{error}</p>}
     </form>

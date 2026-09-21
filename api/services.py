@@ -112,6 +112,12 @@ class Task:
     list_name: str | None = None
 
 
+    # The list's id, as distinct from its name. Needed to write: creating a task
+    # requires addressing a list, and a name is not an address — two lists can
+    # share one, and renaming one would break anything holding the old string.
+    list_id: str | None = None
+
+
 @runtime_checkable
 class CalendarService(Protocol):
     source_id: str
@@ -119,11 +125,36 @@ class CalendarService(Protocol):
     def list_events(self, start: datetime, end: datetime) -> list[CalendarEvent]: ...
 
 
+@dataclass
+class TaskList:
+    """A named collection of tasks — "Work", "To Read", "To Watch".
+
+    Enumerated separately from tasks rather than derived from them, because an
+    empty list has no tasks to derive it from. That is not an edge case: a brand
+    new "To Read" list is empty precisely when you first want to add to it.
+    """
+
+    provider_id: str
+    name: str
+
+
 @runtime_checkable
 class TaskService(Protocol):
     source_id: str
 
     def list_tasks(self, include_completed: bool = False) -> list[Task]: ...
+
+    def list_task_lists(self) -> list[TaskList]: ...
+
+    def create_task_list(self, name: str) -> TaskList: ...
+
+    def create_task(
+        self,
+        list_id: str,
+        title: str,
+        notes: str | None = None,
+        due: datetime | None = None,
+    ) -> Task: ...
 
     def complete_task(self, provider_id: str) -> Task: ...
 

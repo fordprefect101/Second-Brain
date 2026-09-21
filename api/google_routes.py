@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from api import tokens as token_store
@@ -63,6 +63,26 @@ class TaskOut(CamelModel):
     notes: str | None = None
     parent_id: str | None = None
     source: str
+    # Both, not one. The name is what a person reads; the id is what a write
+    # addresses. Grouping the UI by name and creating by id needs each.
+    list_name: str | None = None
+    list_id: str | None = None
+
+
+class TaskListOut(CamelModel):
+    id: str
+    name: str
+
+
+class CreateTaskListIn(CamelModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+class CreateTaskIn(CamelModel):
+    list_id: str
+    title: str = Field(min_length=1, max_length=500)
+    notes: str | None = Field(default=None, max_length=8000)
+    due: datetime | None = None
 
 
 def _handle(exc: Exception) -> HTTPException:
@@ -213,6 +233,60 @@ def list_tasks(include_completed: bool = False) -> list[TaskOut]:
     return [_task_out(task, service.source_id) for task in tasks]
 
 
+@router.get("/tasks/lists", response_model=list[TaskListOut])
+def list_task_lists() -> list[TaskListOut]:
+    """Every task list, including empty ones.
+
+    Declared before /tasks/{list_id}/... so "lists" is never read as a list id.
+    """
+    service = get_task_service()
+    try:
+        lists = service.list_task_lists()
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+    return [TaskListOut(id=tl.provider_id, name=tl.name) for tl in lists]
+
+
+@router.post("/tasks/lists", response_model=TaskListOut, status_code=201)
+def create_task_list(payload: CreateTaskListIn) -> TaskListOut:
+    """Create a task list.
+
+    Declared before /tasks/{list_id}/... for the same reason as the GET: the
+    literal segment must win over the parameterised one.
+    """
+    service = get_task_service()
+    try:
+        created = service.create_task_list(payload.name.strip())
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+    return TaskListOut(id=created.provider_id, name=created.name)
+
+
+@router.post("/tasks", response_model=TaskOut, status_code=201)
+def create_task(payload: CreateTaskIn) -> TaskOut:
+    """Add a task to a list.
+
+    The list is chosen by the caller rather than defaulted, because there is no
+    safe default: a book landing in a work backlog is wrong in a way that is easy
+    to miss. The UI groups by list and puts an add row inside each group, so the
+    position of the input is the choice — no picker, and no wrong default.
+    """
+    service = get_task_service()
+    try:
+        task = service.create_task(
+            list_id=payload.list_id,
+            title=payload.title.strip(),
+            notes=payload.notes,
+            due=payload.due,
+        )
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+    return _task_out(task, service.source_id)
+
+
 @router.post("/tasks/{list_id}/{task_id}/complete", response_model=TaskOut)
 def complete_task(list_id: str, task_id: str) -> TaskOut:
     """Path is split because a Google task id is only addressable with its list."""
@@ -233,6 +307,8 @@ def _task_out(task, source: str) -> TaskOut:
         due=task.due,
         notes=task.notes,
         parent_id=task.parent_id,
+        list_name=task.list_name,
+        list_id=task.list_id,
         source=source,
     )
 

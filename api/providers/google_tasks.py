@@ -10,14 +10,14 @@ See docs/integrations/README.md for the open question this settles.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
 
 from api.oauth import get_access_token
 from api.providers.google_client import GoogleApiError, GoogleClient
-from api.services import Task
+from api.services import Task, TaskList
 
 LISTS_URL = "https://tasks.googleapis.com/tasks/v1/users/@me/lists"
 TASKS_URL = "https://tasks.googleapis.com/tasks/v1/lists/{list_id}/tasks"
@@ -62,6 +62,89 @@ class GoogleTasksProvider:
                 tasks.append(_to_task(item, list_id, task_list.get("title")))
 
         return tasks
+
+    def list_task_lists(self) -> list[TaskList]:
+        """Every list, including empty ones.
+
+        Separate from list_tasks because a list's existence cannot be derived from
+        its tasks when it has none — and that is exactly when it matters, since a
+        new "To Read" list is empty at the moment you first want to add to it.
+        """
+        return [
+            TaskList(provider_id=item["id"], name=item.get("title") or "(untitled)")
+            for item in self.client.paginate(LISTS_URL, limit=50)
+        ]
+
+    def create_task_list(self, name: str) -> TaskList:
+        """Make a new list.
+
+        Closes the last gap in owning tasks from here: you could read lists,
+        read and complete tasks, and add to a list — but a list that did not
+        exist yet had to be created in Google Tasks itself, which is exactly
+        the case that comes up (a new "To Read" is empty when you first want it).
+
+        Google permits duplicate titles, and this does not prevent them: two
+        lists called "To Read" is a mess the user made deliberately, and silently
+        refusing or merging would be the provider inventing policy.
+        """
+        response = httpx.post(
+            LISTS_URL,
+            headers={"Authorization": f"Bearer {get_access_token(self.repo_root)}"},
+            json={"title": name.strip()},
+            timeout=30,
+        )
+
+        if not response.is_success:
+            raise GoogleApiError(
+                f"Could not create list: HTTP {response.status_code} "
+                f"{response.text[:200]}"
+            )
+
+        item = response.json()
+        return TaskList(provider_id=item["id"], name=item.get("title") or name.strip())
+
+    def create_task(
+        self,
+        list_id: str,
+        title: str,
+        notes: str | None = None,
+        due: datetime | None = None,
+    ) -> Task:
+        """Add a task to a list.
+
+        A POST rather than a GET, so it does not go through GoogleClient — same as
+        complete_task. The token comes from the same place, and an expired one
+        surfaces as NeedsReconnect for the route to turn into a reconnect prompt.
+
+        Google stores `due` as RFC3339 but honours only the date part — a time of
+        day is accepted and then ignored. Sending midnight UTC rather than the
+        caller's clock time avoids a task silently landing on the wrong day for
+        anyone east or west of it.
+        """
+        body: dict = {"title": title.strip()}
+        if notes:
+            body["notes"] = notes
+        if due is not None:
+            at = due if due.tzinfo else due.replace(tzinfo=timezone.utc)
+            body["due"] = at.astimezone(timezone.utc).strftime("%Y-%m-%dT00:00:00.000Z")
+
+        response = httpx.post(
+            TASKS_URL.format(list_id=list_id),
+            headers={"Authorization": f"Bearer {get_access_token(self.repo_root)}"},
+            json=body,
+            timeout=30,
+        )
+
+        if not response.is_success:
+            raise GoogleApiError(
+                f"Could not create task: HTTP {response.status_code} "
+                f"{response.text[:200]}"
+            )
+
+        # The response carries the task but not its list, so the name is not
+        # available here without a second call. The id is what writes need; the
+        # name is cosmetic and the next list_tasks fills it in.
+        return _to_task(response.json(), list_id, None)
 
     def complete_task(self, provider_id: str) -> Task:
         """Mark a task done.
@@ -108,4 +191,5 @@ def _to_task(item: dict, list_id: str, list_name: str | None) -> Task:
         # notes silently lost which list it came from — and "To Read" vs "Work" is
         # exactly the distinction that must survive.
         list_name=list_name,
+        list_id=list_id,
     )

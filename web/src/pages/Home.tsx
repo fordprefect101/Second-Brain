@@ -1,64 +1,167 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { CaptureItem, Note } from '../types';
 import { listCaptures } from '../api/captures';
+import { ApiError } from '../api/client';
 import { listNotes } from '../api/notes';
-import { listEvents, needsReconnect, startGoogleConnect, type CalendarEvent } from '../api/google';
+import { listRepos, type Repository } from '../api/github';
+import {
+  completeTask,
+  createTask,
+  createTaskList,
+  listEvents,
+  listTaskLists,
+  listTasks,
+  startGoogleConnect,
+  type CalendarEvent,
+  type Task,
+  type TaskList,
+} from '../api/google';
+import { AskBox } from '../components/AskBox';
 import { CaptureBox } from '../components/CaptureBox';
-import { SourceBadge } from '../components/SourceBadge';
+import { Tile, TileEmpty, TileError, TileSkeleton } from '../components/Tile';
 import { daysAgo, isToday, relativeTime } from '../lib/time';
 
 /**
- * Today — the daily landing view.
+ * Today — everything on one surface.
  *
- * Answers "what is going on right now?" rather than listing everything. Three
- * questions, in the order they get asked: what did I capture today, what is still
- * waiting, what was I working on.
+ * Previously three stacked lists in a 780px column, which meant scrolling past
+ * things that should have been visible at once. A dashboard's job is to be taken
+ * in, not read.
  *
- * The capture box is here as well as in Inbox because Plan.md §11 asks for FAST
- * capture. A capture box you have to navigate to is one you stop using — this is
- * the first screen, so a thought can be recorded without going anywhere.
+ * Every tile shows a preview and expands to its own route. The expanded views are
+ * the pages that already existed — Inbox, Tasks, Projects, Knowledge — reused
+ * rather than rewritten, because App renders child routes as overlays over this.
  *
- * Calendar events belong in this view and are absent until Phase 3. The card says
- * so rather than pretending the day has nothing in it.
+ * allSettled, not all: Google being disconnected must not blank the captures and
+ * notes. Each tile degrades on its own, which is the same reason the old version
+ * used it and matters more now that there are six.
  */
+const SELECTED_LIST_KEY = 'personal-os:tasks:list';
+
+/** How long a completed task stays undoable before the write actually fires. */
+const UNDO_WINDOW_MS = 4500;
+
+/** Sentinel for the select's "create one" option. Not a list id. */
+const NEW_LIST = '__new_list__';
+
+/**
+ * Turn a rejected fetch into something a person can act on.
+ *
+ * "Could not load" tells you nothing you did not already infer from the blank
+ * tile. What matters is which of three things happened, because each has a
+ * different fix: the API is not running, the token expired, or GitHub is rate
+ * limiting. Those are all normal states of this system rather than crashes —
+ * unverified Google apps get 7-day refresh tokens, so a dead token is a weekly
+ * event, not an incident.
+ */
+function describe(reason: unknown, source: string): string {
+  if (reason instanceof ApiError) {
+    if (reason.status === 0) return 'API not running on :8000.';
+    if (reason.status === 401) {
+      return source === 'repos'
+        ? 'GitHub token expired or revoked.'
+        : 'Google disconnected — reconnect in Settings.';
+    }
+    if (reason.status === 429) return 'GitHub rate limit reached. Try later.';
+    if (reason.status === 503) return 'Source unavailable.';
+  }
+  return 'Could not load.';
+}
+
 export function Home() {
   const [captures, setCaptures] = useState<CaptureItem[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [calendarReconnect, setCalendarReconnect] = useState(false);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [taskLists, setTaskLists] = useState<TaskList[]>([]);
+  const [repos, setRepos] = useState<Repository[]>([]);
+
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let active = true;
+  // Ticked off, not yet written. Held here rather than removed from `tasks`, so
+  // undo restores the real object instead of a reconstruction.
+  const [pending, setPending] = useState<Task[]>([]);
+  // The just-captured item, so it can animate in. Capture previously gave no
+  // confirmation at all — the textarea cleared and you inferred success from a
+  // row appearing, if you happened to be looking at the right part of the tile.
+  const [justCaptured, setJustCaptured] = useState<string | null>(null);
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // Per source, not global. One dead integration must degrade one tile — which
+  // is why the fetch uses allSettled — but allSettled then swallows the reason,
+  // so it has to be caught here or the failure is invisible.
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-    // allSettled, not all: Google being disconnected must not blank the captures
-    // and notes. Each source degrades on its own.
-    Promise.allSettled([listCaptures('inbox'), listNotes(50), listEvents(1)]).then(
-      ([capturesResult, notesResult, eventsResult]) => {
-        if (!active) return;
-        if (capturesResult.status === 'fulfilled') setCaptures(capturesResult.value);
-        if (notesResult.status === 'fulfilled') setNotes(notesResult.value);
-        if (eventsResult.status === 'fulfilled') setEvents(eventsResult.value);
-        else if (needsReconnect(eventsResult.reason)) setCalendarReconnect(true);
-        setLoading(false);
-      },
-    );
+  // Lifted out of TaskPanel so the tile's count can describe what is actually on
+  // screen. It read "23" above six rows from one list, because the count was
+  // every open task and the body was one list. Two true numbers, shown together,
+  // making a false impression.
+  const [selectedList, setSelectedList] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(SELECTED_LIST_KEY);
+    } catch {
+      return null;
+    }
+  });
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setErrors({});
+
+    return Promise.allSettled([
+      listCaptures('inbox'),
+      listNotes(50),
+      listEvents(1),
+      listTasks(),
+      listTaskLists(),
+      listRepos(30),
+    ]).then(([c, n, e, t, tl, r]) => {
+      const failed: Record<string, string> = {};
+
+      if (c.status === 'fulfilled') setCaptures(c.value);
+      else failed.captures = describe(c.reason, 'captures');
+
+      if (n.status === 'fulfilled') setNotes(n.value);
+      else failed.notes = describe(n.reason, 'notes');
+
+      if (e.status === 'fulfilled') setEvents(e.value);
+      else failed.events = describe(e.reason, 'events');
+
+      if (t.status === 'fulfilled') setTasks(t.value);
+      else failed.tasks = describe(t.reason, 'tasks');
+
+      if (tl.status === 'fulfilled') setTaskLists(tl.value);
+      else failed.tasks ??= describe(tl.reason, 'tasks');
+
+      if (r.status === 'fulfilled') setRepos(r.value);
+      else failed.repos = describe(r.reason, 'repos');
+
+      setErrors(failed);
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Flush nothing on unmount — just stop the timers. Navigating away mid-window
+  // would otherwise fire a request from a component that no longer exists.
+  useEffect(() => {
+    const running = timers.current;
     return () => {
-      active = false;
+      running.forEach(clearTimeout);
+      running.clear();
     };
   }, []);
 
   /**
    * When an event is, not just what time it starts.
    *
-   * The events route takes `days` and returns "now to now + days" — a rolling
-   * window, not a calendar day, despite the docstring saying "today". So with the
-   * default of 1, a 9am meeting *tomorrow* is in this list, and rendering it as
-   * bare "9:00 AM" on a page titled Today reads as nine o'clock this morning.
-   *
-   * The date is therefore shown for anything not today, and omitted for anything
-   * that is — a date on every row of a Today view is noise.
+   * /events?days=1 returns "now to now + 24h", not a calendar day — so a 9am
+   * meeting tomorrow is in this list, and bare "9:00 AM" on a page titled Today
+   * reads as this morning. Date shown for anything not today, omitted for
+   * anything that is: a date on every row of a Today view is noise.
    */
   const timeOf = (event: CalendarEvent) => {
     const time = event.allDay
@@ -70,8 +173,6 @@ export function Home() {
 
     if (isToday(event.start)) return time;
 
-    // daysAgo counts backwards, so the future is negative: -1 is tomorrow.
-    // Naming it beats "Thu 18 Sep" for the one case that comes up constantly.
     const day =
       daysAgo(event.start) === -1
         ? 'tomorrow'
@@ -84,149 +185,423 @@ export function Home() {
     return `${day} · ${time}`;
   };
 
-  const capturedToday = captures.filter((c) => isToday(c.createdAt));
-  const waiting = captures.filter((c) => !isToday(c.createdAt));
-  const touchedThisWeek = notes.filter((n) => daysAgo(n.modifiedAt) <= 7);
+  const open = tasks.filter((t) => !t.completed && !pending.some((p) => p.id === t.id));
+  const recentNotes = notes.filter((n) => daysAgo(n.modifiedAt) <= 7);
 
-  const today = new Date();
+  // Falls back to the first list, which also covers a stored id whose list has
+  // since been deleted.
+  const activeList =
+    taskLists.find((l) => l.id === selectedList)?.id ?? taskLists[0]?.id ?? null;
+  const shownTasks = open.filter((t) => t.listId === activeList);
+
+  function chooseList(id: string) {
+    setSelectedList(id);
+    try {
+      localStorage.setItem(SELECTED_LIST_KEY, id);
+    } catch {
+      /* the selection still works for this session */
+    }
+  }
+
+  /**
+   * Ticking a task off, with a window to change your mind.
+   *
+   * The write is DELAYED rather than optimistic. Optimistic means sending
+   * immediately and rolling back on failure — which leaves no way to undo a
+   * correct write, and `complete_task` only goes one way: there is no API to
+   * un-complete a task, so a rollback could not have worked anyway.
+   *
+   * So the row leaves immediately, an undo sits there for a few seconds, and the
+   * request only fires when that window closes. Undo inside the window means
+   * nothing was ever sent — and an undo that never touched the network cannot
+   * itself fail.
+   */
+  function complete(task: Task) {
+    setPending((current) => [...current, task]);
+
+    const timer = setTimeout(() => {
+      void completeTask(task.id).catch(() => {
+        // Put it back. The task is still open in Google, so the tile showing it
+        // again is the truthful state, not a rollback of something that happened.
+        setTasks((current) => [task, ...current.filter((t) => t.id !== task.id)]);
+      });
+      setPending((current) => current.filter((t) => t.id !== task.id));
+      timers.current.delete(task.id);
+    }, UNDO_WINDOW_MS);
+
+    timers.current.set(task.id, timer);
+  }
+
+  async function addList(name: string) {
+    const created = await createTaskList(name);
+    setTaskLists((current) => [...current, created]);
+    chooseList(created.id);
+  }
+
+  function undoComplete(task: Task) {
+    const timer = timers.current.get(task.id);
+    if (timer) clearTimeout(timer);
+    timers.current.delete(task.id);
+    setPending((current) => current.filter((t) => t.id !== task.id));
+  }
+
+  async function add(listId: string, title: string) {
+    const created = await createTask(listId, title);
+    // Prepended, not appended. The tile shows the first few of a list that can
+    // hold twenty, so appending put a new task off the end of the preview — it
+    // was in state and invisible, which reads exactly like a broken write.
+    // Google returns new tasks at the top too, so this also matches what the
+    // next refresh will show.
+    setTasks((current) => [created, ...current]);
+  }
 
   return (
     <>
-      <header className="page-header">
-        <h1>Today</h1>
-        <p className="page-subtitle">
-          {today.toLocaleDateString(undefined, {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-          })}
-        </p>
-      </header>
+      {/* Outside .bento: with column-count, a child becomes a column item, and
+          Ask has to span the full width. */}
+      <AskBox />
 
-      <CaptureBox onCaptured={(item) => setCaptures((current) => [item, ...current])} />
+      <div className="bento">
 
-      <div className="cards">
-        <Link to="/inbox" className="card">
-          <span className="card-value">{loading ? '·' : captures.length}</span>
-          <span className="card-label">to triage</span>
-        </Link>
-        <Link to="/knowledge" className="card">
-          <span className="card-value">{loading ? '·' : notes.length}</span>
-          <span className="card-label">notes</span>
-        </Link>
-        <Link to="/tasks" className="card">
-          <span className="card-value">{loading ? '·' : events.length}</span>
-          <span className="card-label">events today</span>
-        </Link>
+      {/* No expandTo: there is no calendar page yet, and an expand button that
+          lands on "not found" is worse than no expand button. It gets one when
+          the page exists. */}
+      <Tile title="Today" count={events.length} accent="google_calendar" className="area-today">
+        {loading ? (
+          <TileSkeleton rows={4} />
+        ) : errors.events ? (
+          <TileError
+            onAction={
+              errors.events.includes('disconnected') ? startGoogleConnect : load
+            }
+            actionLabel={
+              errors.events.includes('disconnected') ? 'reconnect' : 'retry'
+            }
+          >
+            {errors.events}
+          </TileError>
+        ) : events.length === 0 ? (
+          <TileEmpty>Nothing scheduled.</TileEmpty>
+        ) : (
+          <ul className="rows">
+            {events.slice(0, 6).map((event) => (
+              <li key={event.id} className="row" data-source="google_calendar">
+                <span className="row-lead">{timeOf(event)}</span>
+                <span className="row-main">{event.title}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Tile>
+
+      <Tile title="Inbox" count={captures.length} expandTo="/inbox" accent="personal_os" className="area-inbox">
+        <CaptureBox
+          onCaptured={(item) => {
+            setCaptures((c) => [item, ...c]);
+            setJustCaptured(item.id);
+          }}
+        />
+        {loading ? (
+          <TileSkeleton rows={3} />
+        ) : errors.captures ? (
+          <TileError onAction={load}>{errors.captures}</TileError>
+        ) : captures.length === 0 ? (
+          <TileEmpty>Nothing waiting.</TileEmpty>
+        ) : (
+          <ul className="rows">
+            {captures.slice(0, 5).map((capture) => (
+              <li
+                key={capture.id}
+                className={
+                  capture.id === justCaptured ? 'row is-new' : 'row'
+                }
+                data-source="personal_os"
+              >
+                <span className="row-main">{capture.body}</span>
+                <span className="row-trail">{relativeTime(capture.createdAt)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Tile>
+
+      {/* count is the SELECTED list, not every open task. It used to read "23"
+          above six rows from one list — both numbers true, the pair misleading. */}
+      <Tile
+        title="Tasks"
+        count={shownTasks.length}
+        expandTo="/tasks"
+        accent="google_tasks"
+        className="area-tasks"
+      >
+        {loading ? (
+          <TileSkeleton rows={5} />
+        ) : errors.tasks ? (
+          <TileError
+            onAction={errors.tasks.includes('disconnected') ? startGoogleConnect : load}
+            actionLabel={errors.tasks.includes('disconnected') ? 'reconnect' : 'retry'}
+          >
+            {errors.tasks}
+          </TileError>
+        ) : (
+          <TaskPanel
+            lists={taskLists}
+            tasks={open}
+            selected={activeList}
+            onSelect={chooseList}
+            onCreateList={addList}
+            pending={pending}
+            onComplete={complete}
+            onUndo={undoComplete}
+            onAdd={add}
+          />
+        )}
+      </Tile>
+
+      <Tile title="Projects" count={repos.length} expandTo="/projects" accent="github" className="area-projects">
+        {loading ? (
+          <TileSkeleton rows={5} />
+        ) : errors.repos ? (
+          <TileError onAction={load}>{errors.repos}</TileError>
+        ) : repos.length === 0 ? (
+          <TileEmpty>No repositories.</TileEmpty>
+        ) : (
+          <ul className="rows">
+            {repos.slice(0, 8).map((repo) => (
+              <li key={repo.id} className="row" data-source="github">
+                <span className="row-main">{repo.name}</span>
+                <span className="row-trail">{relativeTime(repo.pushedAt)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Tile>
+
+      <Tile
+        title="Notes"
+        count={recentNotes.length}
+        expandTo="/knowledge"
+        accent="obsidian"
+        className="area-notes"
+      >
+        {loading ? (
+          <TileSkeleton rows={5} />
+        ) : errors.notes ? (
+          <TileError onAction={load}>{errors.notes}</TileError>
+        ) : recentNotes.length === 0 ? (
+          <TileEmpty>Nothing edited this week.</TileEmpty>
+        ) : (
+          <ul className="rows">
+            {recentNotes.slice(0, 8).map((note) => (
+              <li key={note.id} className="row" data-source="obsidian">
+                <Link to={`/notes/${note.id}`} className="row-main row-link">
+                  {note.title}
+                </Link>
+                <span className="row-trail">{relativeTime(note.modifiedAt)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        </Tile>
       </div>
+    </>
+  );
+}
 
-      {calendarReconnect && (
-        <p className="banner">
-          Google connection expired.{' '}
-          <button type="button" className="link-button" onClick={startGoogleConnect}>
-            reconnect
-          </button>
-        </p>
-      )}
 
-      {events.length > 0 && (
-        <>
-          <h2 className="section-heading">Schedule</h2>
-          <ul className="list">
-            {events.map((event) => (
-              <li key={event.id} className="list-item">
-                <div className="list-item-meta">
-                  <span className="event-time">{timeOf(event)}</span>
-                  {/* Which calendar, not just "Google" — with eight of them,
-                      "Formula 1" vs "Family" is what makes an event legible. */}
-                  <span className="source-badge">
-                    {event.calendarName ?? 'Calendar'}
-                  </span>
-                </div>
-                <h3 className="list-item-title">{event.title}</h3>
-                {event.location && (
-                  <p className="list-item-body">{event.location}</p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+/**
+ * One list at a time, chosen by the user.
+ *
+ * Stacking every list was worse in two ways. It was cramped — seven groups in a
+ * third of the grid — and it only rendered lists that already had tasks, so an
+ * empty "To Read" was invisible and therefore unaddable. That is the exact
+ * problem list_task_lists() was added to solve, reintroduced in the UI.
+ *
+ * A select rather than chips: seven lists, and "Etsy Website Changes" alone would
+ * take the tile's full width.
+ *
+ * The add row targets whatever is selected, so it stays unambiguous — the choice
+ * is made once, above, rather than implied by the position of an input.
+ */
+function TaskPanel({
+  lists,
+  tasks,
+  selected,
+  pending,
+  onSelect,
+  onCreateList,
+  onComplete,
+  onUndo,
+  onAdd,
+}: {
+  lists: TaskList[];
+  tasks: Task[];
+  /** Owned by Home, because the tile's header count has to agree with what is
+      rendered here — two sources of truth for "which list" was exactly how the
+      header came to say 23 above six rows. */
+  selected: string | null;
+  /** Ticked off, write not yet sent. Shown struck through with an undo. */
+  pending: Task[];
+  onSelect: (id: string) => void;
+  onCreateList: (name: string) => Promise<void>;
+  onComplete: (task: Task) => void;
+  onUndo: (task: Task) => void;
+  onAdd: (listId: string, title: string) => Promise<void>;
+}) {
+  // A select option is not an action, so choosing "new list" does not create
+  // one — it swaps the select for an input. Naming it is the action.
+  const [naming, setNaming] = useState(false);
 
-      {capturedToday.length > 0 && (
-        <>
-          <h2 className="section-heading">Captured today</h2>
-          <ul className="list">
-            {capturedToday.map((capture) => (
-              <li key={capture.id} className="list-item">
-                <div className="list-item-meta">
-                  <span className={`kind kind-${capture.kind}`}>{capture.kind}</span>
-                  <time dateTime={capture.createdAt}>
-                    {relativeTime(capture.createdAt)}
-                  </time>
-                </div>
-                <p className="list-item-body">{capture.body}</p>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+  const [first] = lists;
+  if (!first) return <TileEmpty>No task lists.</TileEmpty>;
 
-      {waiting.length > 0 && (
-        <>
-          <h2 className="section-heading">
-            Waiting in the inbox · {waiting.length}
-          </h2>
-          <ul className="list">
-            {waiting.slice(0, 4).map((capture) => (
-              <li key={capture.id} className="list-item is-muted">
-                <div className="list-item-meta">
-                  <span className={`kind kind-${capture.kind}`}>{capture.kind}</span>
-                  <time dateTime={capture.createdAt}>
-                    {relativeTime(capture.createdAt)}
-                  </time>
-                </div>
-                <p className="list-item-body">{capture.body}</p>
-              </li>
-            ))}
-          </ul>
-          {waiting.length > 4 && (
-            <p className="more-link">
-              <Link to="/inbox">{waiting.length - 4} more in the inbox →</Link>
-            </p>
-          )}
-        </>
-      )}
+  const active = lists.find((l) => l.id === selected) ?? first;
+  const items = tasks.filter((t) => t.listId === active.id);
+  const pendingHere = pending.filter((t) => t.listId === active.id);
 
-      <h2 className="section-heading">
-        {touchedThisWeek.length > 0 ? 'Worked on this week' : 'Recently modified'}
-      </h2>
-      {loading ? (
-        <p className="list-item-body">Loading…</p>
-      ) : notes.length === 0 ? (
-        <div className="empty">
-          <p className="empty-title">No notes</p>
-          <p className="empty-detail">
-            Set OBSIDIAN_VAULT_PATH in .env, or add notes to the vault.
-          </p>
-        </div>
+  return (
+    <div className="task-panel">
+      {naming ? (
+        <NewList onCreate={onCreateList} onCancel={() => setNaming(false)} />
       ) : (
-        <ul className="list">
-          {(touchedThisWeek.length > 0 ? touchedThisWeek : notes)
-            .slice(0, 5)
-            .map((note) => (
-              <li key={note.id} className="list-item">
-                <div className="list-item-meta">
-                  <SourceBadge source={note.source} />
-                  <time dateTime={note.modifiedAt}>
-                    {relativeTime(note.modifiedAt)}
-                  </time>
-                </div>
-                <h3 className="list-item-title">{note.title}</h3>
-              </li>
-            ))}
+        <select
+          className="task-select"
+          value={active.id}
+          onChange={(e) =>
+            e.target.value === NEW_LIST ? setNaming(true) : onSelect(e.target.value)
+          }
+          aria-label="Which task list to show"
+        >
+          {lists.map((list) => (
+            <option key={list.id} value={list.id}>
+              {list.name}
+            </option>
+          ))}
+          <option value={NEW_LIST}>+ new list…</option>
+        </select>
+      )}
+
+      {/* Ticked off but not yet written. Kept on screen rather than vanishing,
+          because a row that disappears leaves you unsure which one you hit. */}
+      {pendingHere.length > 0 && (
+        <ul className="rows">
+          {pendingHere.map((task) => (
+            <li key={task.id} className="row is-done" data-source="google_tasks">
+              <input type="checkbox" className="row-check" checked readOnly />
+              <span className="row-main">{task.title}</span>
+              <button type="button" className="row-undo" onClick={() => onUndo(task)}>
+                undo
+              </button>
+            </li>
+          ))}
         </ul>
       )}
-    </>
+
+      {items.length === 0 && pendingHere.length === 0 ? (
+        <TileEmpty>Nothing open in this list.</TileEmpty>
+      ) : items.length === 0 ? null : (
+        <ul className="rows">
+          {items.slice(0, 10).map((task) => (
+            <li key={task.id} className="row" data-source="google_tasks">
+              <input
+                type="checkbox"
+                className="row-check"
+                checked={false}
+                onChange={() => onComplete(task)}
+                aria-label={`Complete ${task.title}`}
+              />
+              <span className="row-main">{task.title}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <AddTask listId={active.id} onAdd={onAdd} />
+    </div>
+  );
+}
+
+/**
+ * Naming a new list.
+ *
+ * Escape cancels and blur cancels, so there is no way to get stuck in this state
+ * — the select is the only way back and it is one keystroke away. Enter on an
+ * empty field cancels too, rather than creating a list called "".
+ */
+function NewList({
+  onCreate,
+  onCancel,
+}: {
+  onCreate: (name: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    const trimmed = name.trim();
+    if (!trimmed) return onCancel();
+    if (saving) return;
+
+    setSaving(true);
+    try {
+      await onCreate(trimmed);
+      onCancel();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <input
+      className="task-select task-newlist"
+      value={name}
+      onChange={(e) => setName(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') void submit();
+        if (e.key === 'Escape') onCancel();
+      }}
+      onBlur={() => !saving && onCancel()}
+      placeholder="list name…"
+      disabled={saving}
+      aria-label="Name the new list"
+      autoFocus
+    />
+  );
+}
+
+function AddTask({
+  listId,
+  onAdd,
+}: {
+  listId: string;
+  onAdd: (listId: string, title: string) => Promise<void>;
+}) {
+  const [title, setTitle] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    const trimmed = title.trim();
+    if (!trimmed || saving) return;
+
+    setSaving(true);
+    try {
+      await onAdd(listId, trimmed);
+      setTitle('');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <input
+      className="task-add"
+      value={title}
+      onChange={(e) => setTitle(e.target.value)}
+      onKeyDown={(e) => e.key === 'Enter' && void submit()}
+      placeholder="+ add"
+      disabled={saving}
+      aria-label="Add a task to the selected list"
+    />
   );
 }

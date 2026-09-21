@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
 import { App } from './App';
-import { Home } from './pages/Home';
 import { Inbox } from './pages/Inbox';
 import { Knowledge } from './pages/Knowledge';
 import { NoteDetail } from './pages/NoteDetail';
@@ -23,7 +22,8 @@ const router = createBrowserRouter([
   {
     element: <App />,
     children: [
-      { path: '/', element: <Home /> },
+      // No route for '/'. App renders the grid unconditionally, so the index is
+      // an empty Outlet — and every child below is therefore an overlay over it.
       { path: '/inbox', element: <Inbox /> },
       { path: '/knowledge', element: <Knowledge /> },
       { path: '/notes/:id', element: <NoteDetail /> },

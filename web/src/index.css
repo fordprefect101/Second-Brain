@@ -38,14 +38,22 @@
   --src-github: #55585f;
   --src-github-soft: #eeeeef;
 
+  /* Failure. Matches the hue .banner.is-error already used, promoted to a token
+     so error styling stops being hardcoded in two places. */
+  --danger: #b3261e;
+
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #171815;
-    --surface: #1e1f1c;
-    --border: #32332f;
+    --bg: #141513;
+    /* Surface was #1e1f1c on a #171815 page — about a 3% luminance step, so
+       tiles barely separated from the background and the whole screen read as
+       murky. Pushing the page darker and the surface lighter widens the gap;
+       the border does the rest. */
+    --surface: #212320;
+    --border: #3a3c35;
     --text: #ececea;
     --text-muted: #9a978f;
     --accent: #7cc39a;
@@ -64,6 +72,7 @@
     --src-tasks-soft: #332a1e;
     --src-github: #a8abb2;
     --src-github-soft: #2a2b2d;
+    --danger: #f2b8b5;
   }
 }
 
@@ -82,15 +91,706 @@ body {
 /* ---- Layout ---- */
 
 .app {
-  display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
   min-height: 100vh;
 }
 
-.main {
-  padding: 36px 44px 64px;
-  max-width: var(--content-max);
+/* ---- Top bar ---- */
+
+/* Horizontal, not a sidebar. A bento with a 208px sidebar is a bento with one
+   fewer column, and once every section is a tile there is nothing left to list. */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 44px;
+  height: 52px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 10;
+}
+
+.topbar-brand {
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+
+.topbar-link {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.topbar-link:hover {
+  color: var(--accent);
+}
+
+/* ---- Overlay ---- */
+
+/* Expanded tiles and note detail render here, over the grid.
+   The URL still changes, so back, refresh and linking all behave — this is a
+   layer, not a modal that traps you. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 24px;
+  overflow-y: auto;
+  background: rgb(0 0 0 / 0.38);
+  backdrop-filter: blur(2px);
+}
+
+.overlay-panel {
+  position: relative;
   width: 100%;
+  max-width: 860px;
+  padding: 32px 36px 40px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 0.22);
+}
+
+.overlay-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.overlay-close:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Edge to edge. The cap existed when this was a single column of prose; a
+   dashboard wants the width, and more width means less truncation per tile. */
+.main {
+  padding: 28px 32px 64px;
+  width: 100%;
+}
+
+/* ---- Bento grid ----
+
+   Asymmetric on purpose. A uniform grid of equal squares says every tile matters
+   equally, which is false: on a Today view the calendar is the anchor and recent
+   notes are periphery. Size carries that.
+
+   Named areas rather than spans, so the layout is readable here and reorderable
+   without touching the components. */
+
+/* Masonry, not a fixed grid.
+
+   It was a grid with named areas, and Today spanned two rows on the assumption it
+   would be the tallest tile — the anchor of a Today view. With four events it is
+   the shortest, so it held two rows open and filled a third of one, leaving a
+   column of dead space taller than any tile on the page.
+
+   The real problem is that tile heights are genuinely variable: Notes has one
+   item, Tasks has six. A fixed grid can only leave gaps or stretch tiles full of
+   empty space. Columns pack them tight and cost nothing.
+
+   The trade: order runs down each column rather than across. On a surface built
+   for scanning rather than reading, that is not a cost worth solving. */
+.bento {
+  column-count: 3;
+  column-gap: 16px;
+}
+
+.bento > * {
+  /* Without this a tile splits across a column break mid-list. */
+  break-inside: avoid;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 1200px) {
+  .bento {
+    column-count: 2;
+  }
+}
+
+/* One column. Also the phone case, when that arrives. */
+@media (max-width: 760px) {
+  .bento {
+    column-count: 1;
+  }
+}
+
+/* ---- Tile ---- */
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* without this, long titles blow the grid column out */
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px 16px;
+}
+
+.tile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.tile-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+
+/* Tile identity.
+
+   The colour system existed only on rows, three levels down, where you have to
+   already be reading to notice it. Carrying it up to the header makes each tile
+   recognisable from the corner of your eye, and gives the grid variation without
+   having to declare one tile more important than the rest. */
+
+.tile[data-accent='obsidian'] .tile-title {
+  color: var(--src-obsidian);
+}
+.tile[data-accent='personal_os'] .tile-title {
+  color: var(--src-personal-os);
+}
+.tile[data-accent='google_calendar'] .tile-title {
+  color: var(--src-calendar);
+}
+.tile[data-accent='google_tasks'] .tile-title {
+  color: var(--src-tasks);
+}
+.tile[data-accent='github'] .tile-title {
+  color: var(--src-github);
+}
+
+/* A hairline of the same colour along the top edge. Subtle enough to read as
+   material rather than decoration, and it ties the header to the rows below. */
+.tile[data-accent] {
+  position: relative;
+  overflow: hidden;
+}
+
+.tile[data-accent]::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  opacity: 0.55;
+}
+
+.tile[data-accent='obsidian']::before {
+  background: var(--src-obsidian);
+}
+.tile[data-accent='personal_os']::before {
+  background: var(--src-personal-os);
+}
+.tile[data-accent='google_calendar']::before {
+  background: var(--src-calendar);
+}
+.tile[data-accent='google_tasks']::before {
+  background: var(--src-tasks);
+}
+.tile[data-accent='github']::before {
+  background: var(--src-github);
+}
+
+.tile-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tile-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
+/* Visible only on hover or focus: six permanently-lit expand icons is visual
+   noise on a surface whose job is to be scanned. Focus included so it stays
+   reachable by keyboard. */
+.tile-expand {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.tile:hover .tile-expand,
+.tile-expand:focus-visible {
+  opacity: 1;
+}
+
+.tile-expand:hover {
+  background: var(--bg);
+  color: var(--accent);
+}
+
+.tile-body {
+  min-width: 0;
+}
+
+/* ---- Loading ----
+
+   Bars roughly where the rows will be, so nothing jumps when data lands. The
+   shimmer is what distinguishes "loading" from "three grey rectangles". */
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 7px 0 5px;
+}
+
+.skeleton-row {
+  height: 9px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--border) 25%,
+    var(--surface) 50%,
+    var(--border) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Anyone who has asked the OS not to animate should not get a pulsing tile. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-row {
+    animation: none;
+    background: var(--border);
+  }
+}
+
+/* ---- Error ----
+
+   Distinct from empty, because they mean opposite things: empty is "there is
+   nothing", error is "I could not find out". Rendering them the same is how a
+   dead GitHub token came to read as "No repositories". */
+.tile-error {
+  margin: 0;
+  padding: 10px 0 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  border-left: 2px solid var(--danger);
+  padding-left: 10px;
+}
+
+/* Empty is a state worth designing. A bare sentence in body colour reads as
+   content, so "Nothing scheduled" looked like a calendar entry called Nothing
+   Scheduled. Lighter, smaller, and centred marks it as the absence of rows
+   rather than a row. */
+.tile-empty {
+  margin: 0;
+  padding: 14px 0 12px;
+  font-size: 12.5px;
+  text-align: center;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+/* ---- Rows inside tiles ----
+
+   Deliberately not .list-item. Those are bordered cards with 14px padding, which
+   is right for a result list and wrong inside a tile — six of them and the tile
+   is a scrollbar. A row is one line, and the tile's own border does the framing.
+
+   The source colour moves to a small left bar rather than a 3px border, because
+   at this density a full border reads as a box within a box. */
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 6px 5px 9px;
+  margin-right: -6px;
+  border-radius: 0 5px 5px 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  border-left: 2px solid transparent;
+  transition: background 0.1s ease;
+}
+
+/* Rows respond to the cursor. Without it the tile is a printout — nothing on
+   the page moves, so nothing reads as interactive until you happen to click. */
+.row:hover {
+  background: var(--bg);
+}
+
+.row[data-source='obsidian'] {
+  border-left-color: var(--src-obsidian);
+}
+.row[data-source='personal_os'] {
+  border-left-color: var(--src-personal-os);
+}
+.row[data-source='google_calendar'] {
+  border-left-color: var(--src-calendar);
+}
+.row[data-source='google_tasks'] {
+  border-left-color: var(--src-tasks);
+}
+.row[data-source='github'] {
+  border-left-color: var(--src-github);
+}
+
+/* Time on a calendar row, tabular so the column aligns down the tile. */
+.row-lead {
+  flex: 0 0 auto;
+  min-width: 62px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* One line. A tile is a preview — a three-line capture would push everything
+     below it off the grid. The full text is one click away in the overlay. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.row-link:hover {
+  color: var(--accent);
+}
+
+.row-trail {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* Custom, because a native checkbox is the one control that refuses to match
+   anything around it — it renders in the OS's blue at the OS's size regardless
+   of the palette, and it was the loudest thing in the Tasks tile. */
+.row-check {
+  flex: 0 0 auto;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  align-self: center;
+  border: 1.5px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.row-check:hover {
+  border-color: var(--src-tasks);
+}
+
+/* The tick is a background SVG rather than ::after — appearance:none allows
+   pseudo-elements on an input in most browsers but not reliably in all. */
+.row-check:checked {
+  background-color: var(--src-tasks);
+  border-color: var(--src-tasks);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5' fill='none' stroke='%23141513' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 11px;
+}
+
+.row-check:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Ask box ---- */
+
+/* The primary action, and it has to look like one.
+
+   It was the emptiest thing on the page: a large rectangle with a small grey
+   pill in the corner. It is the first thing you should want to type into, so it
+   gets the largest text on screen and a focus state that actually responds. */
+.askbox {
+  padding: 16px 18px;
+  /* Matches the bento's gap. The margin lives on .bento > * and AskBox sits
+     outside it (column-count would otherwise squeeze it into one column), so
+     without this it butts straight against the first row of tiles. */
+  margin-bottom: 16px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* :focus-within, not :focus — the element that takes focus is the input inside,
+   but the thing that should visibly respond is the whole box. */
+.askbox:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.askbox-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.askbox-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  padding: 3px 0;
+}
+
+.askbox-input:focus {
+  outline: none;
+}
+
+.askbox-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+/* Shows which mode the box guessed, and flips it on click. Visible rather than
+   silent: a box that decides for you and does not say so is the one that feels
+   broken when it guesses wrong. */
+.askbox-mode {
+  flex: 0 0 auto;
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.askbox-mode:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Filled when it will ask, quiet when it will search. Ask costs thirty seconds
+   and a model call; search is free and already running. The pill should look
+   like the difference. */
+.askbox-mode[data-mode='ask'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
+.askbox-mode[data-mode='ask']:hover {
+  opacity: 0.88;
+  color: var(--bg);
+}
+
+.askbox-clear {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.askbox-clear:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* A counter, not a spinner. Thirty seconds of spinner reads as hung; thirty
+   seconds of rising number reads as working. */
+.askbox-status {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.askbox-hint {
+  opacity: 0.7;
+}
+
+.askbox-results {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+/* ---- Answer ---- */
+
+.answer {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.answer-text {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* Attribution, not navigation. Naming where a claim came from is what makes the
+   answer checkable; turning them into links is a separate feature, and only
+   notes would have anywhere to go. */
+.answer-sources {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.answer-sources-label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10.5px;
+}
+
+.answer-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Task panel ---- */
+
+.task-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Styled down to look like a heading that happens to be changeable, rather than
+   a form control sitting in a dashboard. The native arrow is kept — it is the
+   only affordance saying this is selectable at all. */
+.task-select {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-bottom: 2px;
+  padding: 1px 4px 1px 0;
+  border: none;
+  background: transparent;
+  color: var(--src-tasks);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* The naming input wears the select's styling, so switching between them does
+   not shift the layout by a pixel. */
+.task-newlist {
+  border-bottom: 1px solid var(--src-tasks);
+  border-radius: 0;
+  min-width: 140px;
+}
+
+.task-newlist::placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.task-newlist:focus {
+  outline: none;
+}
+
+.task-select:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* The add row targets whatever the select shows, so the choice is made once and
+   visibly, rather than implied by where an input happens to sit. */
+.task-add {
+  width: 100%;
+  margin-top: 3px;
+  padding: 3px 0 3px 11px;
+  border: none;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.task-add::placeholder {
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.task-add:focus {
+  outline: none;
+  border-left-color: var(--src-tasks);
 }
 
 /* ---- Grid ---- */
@@ -777,4 +1477,95 @@ body {
 .plain-link:hover {
   color: var(--accent);
   text-decoration: underline;
+}
+
+/* ---- Motion ----
+
+   Every state change was binary: overlays appeared, rows vanished, tiles popped
+   in. Instant is not the same as fast — when a row disappears with no transition
+   you are left unsure whether you hit the one you meant. A sixth of a second is
+   what makes a change legible rather than merely quick.
+
+   All of it is suppressed for anyone who has asked the OS not to animate. */
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes tile-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.overlay {
+  animation: overlay-in 0.16s ease both;
+}
+
+.overlay-panel {
+  animation: panel-in 0.2s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+.bento > * {
+  animation: tile-in 0.22s ease both;
+}
+
+/* A short stagger so the grid assembles rather than flashing into place. Capped
+   at five — beyond that the last tile feels late rather than sequenced. */
+.bento > *:nth-child(1) { animation-delay: 0.02s; }
+.bento > *:nth-child(2) { animation-delay: 0.05s; }
+.bento > *:nth-child(3) { animation-delay: 0.08s; }
+.bento > *:nth-child(4) { animation-delay: 0.11s; }
+.bento > *:nth-child(5) { animation-delay: 0.14s; }
+
+/* New rows arriving — a captured thought, a just-added task. */
+.row.is-new {
+  animation: row-in 0.24s ease both;
+}
+
+/* A task ticked off but not yet written: present, clearly done, still undoable. */
+.row.is-done .row-main {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.row-undo {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.row-undo:hover {
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .overlay-panel,
+  .bento > *,
+  .row.is-new {
+    animation: none;
+  }
 }
