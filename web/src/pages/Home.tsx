@@ -252,7 +252,7 @@ export function Home() {
       void completeTask(task.id).catch(() => {
         // Put it back. The task is still open in Google, so the tile showing it
         // again is the truthful state, not a rollback of something that happened.
-        setTasks((current) => [task, ...current.filter((t) => t.id !== task.id)]);
+        // Publish only — the subscriber above is what returns it to this list.
         publishTaskChange({ kind: 'restored', task });
       });
       setPending((current) => current.filter((t) => t.id !== task.id));
@@ -277,13 +277,21 @@ export function Home() {
 
   async function add(listId: string, title: string) {
     const created = await createTask(listId, title);
+
+    // Publish, and do not also update state here.
+    //
+    // This used to do both, and every added task appeared twice. The publisher
+    // hears its own event, so the subscriber above had already queued the
+    // prepend — its `some(id)` guard ran against a state that did not contain
+    // the task yet, passed, and added it. The unconditional prepend that
+    // followed then added it a second time.
+    //
+    // The guard cannot save you here: both updates are queued in the same pass,
+    // and only one of them was checking. So there is one write path, not two.
+    // (Prepend rather than append is the subscriber's job now — the tile shows
+    // the first few of a list that can hold twenty, and a new task appended off
+    // the end of the preview reads exactly like a failed write.)
     publishTaskChange({ kind: 'added', task: created });
-    // Prepended, not appended. The tile shows the first few of a list that can
-    // hold twenty, so appending put a new task off the end of the preview — it
-    // was in state and invisible, which reads exactly like a broken write.
-    // Google returns new tasks at the top too, so this also matches what the
-    // next refresh will show.
-    setTasks((current) => [created, ...current]);
   }
 
   return (

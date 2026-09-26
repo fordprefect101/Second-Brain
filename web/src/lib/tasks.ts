@@ -69,8 +69,15 @@ export function useSelectedTaskList(): string | null {
  * correct enough to be worth the round trip. The real caching decision (Plan.md §4)
  * is untouched by this.
  *
- * Handlers must be idempotent: the publisher hears its own event, and dropping a
- * task by id or adding one that is already there both cost nothing the second time.
+ * **A publisher must not also update its own state.** The publisher hears its own
+ * event, so publishing *is* the update — for the view that published it too. Doing
+ * both is what made every added task appear twice: the subscriber's "is it already
+ * there?" guard and the caller's unconditional prepend were queued in the same
+ * React update pass, and only one of them was checking. The guard tests the state
+ * as it was before either ran, so it passes, and then the second write lands anyway.
+ *
+ * Handlers must still be idempotent — a task can be published twice by different
+ * paths — but idempotence in the handler cannot rescue a second write outside it.
  */
 export type TaskChange =
   | { kind: 'added'; task: Task }

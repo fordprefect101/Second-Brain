@@ -87,8 +87,6 @@ export function Tasks() {
   });
 
   async function complete(task: Task) {
-    const previous = tasks;
-    setTasks((current) => current.filter((t) => t.id !== task.id));
     publishTaskChange({ kind: 'completed', task });
 
     try {
@@ -96,7 +94,10 @@ export function Tasks() {
     } catch (err) {
       // Still open in Google, so putting it back is the truthful state rather
       // than a rollback of something that happened.
-      setTasks(previous);
+      //
+      // One task restored, not a whole snapshot. This used to keep `previous`
+      // and reinstate the entire array, which would also silently undo anything
+      // that arrived while the request was in flight.
       publishTaskChange({ kind: 'restored', task });
       if (needsReconnect(err)) setReconnect(true);
       else setError('Could not complete that task.');
@@ -105,7 +106,10 @@ export function Tasks() {
 
   async function add(listId: string, title: string) {
     const created = await createTask(listId, title);
-    setTasks((current) => [created, ...current]);
+    // One write path: publish only, and let this component's own subscriber put
+    // it into state. Doing both worked here purely because the order happened to
+    // be the safe one — which is the kind of correctness that breaks the next
+    // time two lines get swapped. It did break, in Home.
     publishTaskChange({ kind: 'added', task: created });
   }
 
