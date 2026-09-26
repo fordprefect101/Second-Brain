@@ -1,0 +1,161 @@
+{
+  "retrieval": [
+    {
+      "name": "keyword-all-words",
+      "date": "2026-09-25",
+      "config": "websearch_to_tsquery (every word must match) OR last-word prefix; index holds title + tags (weight A) and first ~240 chars of each note (weight B)",
+      "k": 5,
+      "recall_at_k": 0.0,
+      "found": 0,
+      "answerable": 9,
+      "per_question": {
+        "q001": null,
+        "q002": null,
+        "q003": null,
+        "q004": null,
+        "q005": null,
+        "q006": null,
+        "q007": null,
+        "q008": null,
+        "q009": null
+      },
+      "notes": "Rank of the expected note in the top k, or null if missed. Every hit came from the last-word prefix fallback; no full question matched any note."
+    },
+    {
+      "name": "keyword-any-word",
+      "date": "2026-09-25",
+      "config": "match=\"any\": plainto_tsquery with & swapped for | (any word matches, more words rank higher), no prefix; same index as above. Run through search() directly, the path the assistant uses",
+      "k": 5,
+      "recall_at_k": 0.667,
+      "mrr": 0.472,
+      "found": 6,
+      "answerable": 9,
+      "per_question": {
+        "q001": 4,
+        "q002": 1,
+        "q003": 1,
+        "q004": 1,
+        "q005": null,
+        "q006": null,
+        "q007": 2,
+        "q008": null,
+        "q009": 2
+      },
+      "notes": "q006 and q008 miss on vocabulary (question and note use different words). q005's answer is past the indexed excerpt. q001 ranks 4th behind two Google Tasks titled 'Personal OS': common words outranking the real answer. The q010 trap now returns 5 unrelated F1 events instead of nothing."
+    },
+    {
+      "name": "keyword-any-word-full-body",
+      "date": "2026-09-25",
+      "config": "match=\"any\" as above; notes' tsvector built from the full body (title+tags weight A, body weight B), excerpt still the only stored text; ts_rank with no length normalization (normalizations 1 and 2 tested first: same recall with worse MRR, and 0/9)",
+      "k": 5,
+      "recall_at_k": 0.889,
+      "mrr": 0.596,
+      "found": 8,
+      "answerable": 9,
+      "per_question": {
+        "q001": 1,
+        "q002": 1,
+        "q003": 1,
+        "q004": 3,
+        "q005": 5,
+        "q006": null,
+        "q007": 1,
+        "q008": 2,
+        "q009": 3
+      },
+      "notes": "q005 found now that its answer is searchable. Long notes (Plan, LEARNING, backlog) crowd the top 3 and push q004 and q009 down: the case for chunking. q006 still misses on vocabulary. q008 is beaten by ADR-010, which arguably also answers it (label question). The q010 trap now returns backlog/Plan_2/Plan: near-topic text, harder for the model to refuse than the F1 events were."
+    },
+    {
+      "name": "keyword-any-word-full-body-30q",
+      "date": "2026-09-25",
+      "config": "same search as keyword-any-word-full-body; dataset grown from 10 to 30 questions (25 answerable, 5 traps). First run of evals/run_retrieval.py, matching on (source, provider_id)",
+      "k": 5,
+      "dataset_size": 30,
+      "recall_at_k": 0.84,
+      "mrr": 0.589,
+      "found": 21,
+      "answerable": 25,
+      "per_question": {
+        "q001": 1,
+        "q002": 1,
+        "q003": 1,
+        "q004": 3,
+        "q005": 5,
+        "q006": null,
+        "q007": 1,
+        "q008": 2,
+        "q009": 3,
+        "q011": 1,
+        "q012": 1,
+        "q013": 1,
+        "q014": 2,
+        "q015": 1,
+        "q016": 3,
+        "q017": null,
+        "q018": 2,
+        "q019": 1,
+        "q020": 2,
+        "q021": 1,
+        "q022": null,
+        "q023": 3,
+        "q024": null,
+        "q025": 5,
+        "q026": 1
+      },
+      "per_tag": {
+        "conceptual": {
+          "found": 2,
+          "total": 2
+        },
+        "distractors": {
+          "found": 3,
+          "total": 3
+        },
+        "false-premise": {
+          "found": 1,
+          "total": 1
+        },
+        "live": {
+          "found": 1,
+          "total": 2
+        },
+        "many-related-docs": {
+          "found": 1,
+          "total": 1
+        },
+        "negation": {
+          "found": 1,
+          "total": 1
+        },
+        "no-exact-keyword": {
+          "found": 1,
+          "total": 5
+        },
+        "no-product-name": {
+          "found": 3,
+          "total": 3
+        },
+        "paraphrased": {
+          "found": 15,
+          "total": 16
+        },
+        "personal-note": {
+          "found": 4,
+          "total": 6
+        },
+        "repo": {
+          "found": 1,
+          "total": 1
+        },
+        "similar-docs": {
+          "found": 1,
+          "total": 1
+        },
+        "task": {
+          "found": 1,
+          "total": 2
+        }
+      }
+    }
+  ]
+}
