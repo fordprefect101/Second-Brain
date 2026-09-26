@@ -6,6 +6,7 @@ import {
   startGoogleConnect,
   type GoogleStatus,
 } from '../api/google';
+import { reindex, summarizeIndexStats } from '../api/search';
 
 /**
  * Connections and configuration.
@@ -32,6 +33,7 @@ const PHASE: Record<SourceId, string> = {
 export function Settings() {
   const [google, setGoogle] = useState<GoogleStatus | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [indexNote, setIndexNote] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -47,6 +49,15 @@ export function Settings() {
     const result = await disconnectGoogle();
     setNote(result.note);
     setGoogle(await googleStatus());
+  }
+
+  async function rebuild() {
+    setIndexNote('Reindexing…');
+    try {
+      setIndexNote(summarizeIndexStats(await reindex()));
+    } catch {
+      setIndexNote('Reindex failed.');
+    }
   }
 
   function googleLabel(): string {
@@ -99,6 +110,21 @@ export function Settings() {
         )}
         {google?.detail && <p className="list-item-body">{google.detail}</p>}
         {note && <p className="list-item-body">{note}</p>}
+      </div>
+
+      {/* Lives here since the bento replaced the Search page, which was its only
+          other entry point. The API also rebuilds a stale index at startup. */}
+      <h2 className="section-heading">Search index</h2>
+      <div className="list-item">
+        <div className="task-row">
+          <div className="task-main">
+            <span className="list-item-title">Rebuild after adding or deleting notes</span>
+          </div>
+          <button type="button" className="button" onClick={() => void rebuild()}>
+            Rebuild
+          </button>
+        </div>
+        {indexNote && <p className="list-item-body">{indexNote}</p>}
       </div>
 
       <h2 className="section-heading">All sources</h2>

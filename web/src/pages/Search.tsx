@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SOURCES, type SourceId, type SearchResult } from '../types';
-import { reindex, search } from '../api/search';
+import { reindex, search, summarizeIndexStats } from '../api/search';
 import { ApiError } from '../api/client';
 import { SourceBadge } from '../components/SourceBadge';
 import { relativeTime } from '../lib/time';
@@ -112,21 +112,7 @@ export function Search() {
   async function rebuild() {
     setIndexNote('Reindexing…');
     try {
-      const s = await reindex();
-      const parts = [
-        `${s.notes.indexed + s.notes.skipped} notes`,
-        `${s.captures.indexed + s.captures.skipped} captures`,
-        `${s.events.indexed + s.events.skipped} events`,
-        `${s.tasks.indexed + s.tasks.skipped} tasks`,
-        `${s.repositories.indexed + s.repositories.skipped} repos`,
-      ];
-      const failed = Object.keys(s.errors ?? {});
-      setIndexNote(
-        parts.join(' · ') +
-          // A source that failed must be named. A silently smaller index looks
-          // identical to a correct one.
-          (failed.length ? ` — failed: ${failed.join(', ')}` : ''),
-      );
+      setIndexNote(summarizeIndexStats(await reindex()));
     } catch {
       setIndexNote('Reindex failed.');
     }
