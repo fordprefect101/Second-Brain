@@ -11,6 +11,13 @@ bodies, because a cached body goes stale the moment the file is edited and a sec
 copy that can diverge makes this a second source of truth (Plan.md §2). The excerpt
 length CHECK in schema.sql enforces that.
 
+The distinction that makes full-text search compatible with that rule: the index
+never STORES a readable body, but its tsvector is BUILT from the full body. A
+tsvector is stemmed lexemes and positions — "databases" becomes 'databas', stop
+words are gone — so it can find a note but cannot stand in for one. Staleness is
+handled the way it is for everything else: the fingerprint covers the full body,
+so any edit reindexes.
+
 Keyword search only, deliberately. Semantic search arrives in the AI layer, once
 there are real failed searches to justify it (ADR-007).
 """
@@ -38,7 +45,7 @@ EXCERPT_LIMIT = 500  # matches the CHECK constraint in schema.sql
 # is a genuinely confusing failure — the code is right, the index is stale, and
 # nothing says so. Folding the version into every fingerprint makes an indexer
 # change invalidate the cache automatically.
-INDEXER_VERSION = 4
+INDEXER_VERSION = 5  # 5: notes searchable on their full body, not the excerpt
 
 
 @dataclass
@@ -91,6 +98,10 @@ class Indexable:
     # task changes when it is completed; a repo changes when it is pushed to. Each
     # source decides, because only it knows what "different" means.
     fingerprint: str
+    # Full text to make searchable. Turned into the tsvector and then discarded —
+    # never written to a column. Empty for sources whose excerpt already says
+    # everything (a task, an event), which are then searched on the excerpt.
+    body: str = ""
 
 
 def index_source(
@@ -143,6 +154,7 @@ def index_source(
             provider=provider,
             title=item.title[:200],
             excerpt=item.excerpt[:EXCERPT_LIMIT],
+            searchable=item.body or item.excerpt,
             tags=item.tags,
             modified_at=item.modified_at,
             content_hash=item.fingerprint,
@@ -210,8 +222,8 @@ def _record_sync(conn: psycopg.Connection, provider: str) -> None:
 
 
 def index_notes(conn: psycopg.Connection, service: NoteService) -> dict[str, int]:
-    """Notes from a knowledge provider."""
-    notes = service.list_notes(limit=5000)
+    """Notes from a knowledge provider, searchable on their full text."""
+    notes = service.list_notes(limit=5000, with_body=True)
     return index_source(
         conn,
         service.source_id,
@@ -223,9 +235,13 @@ def index_notes(conn: psycopg.Connection, service: NoteService) -> dict[str, int
                 excerpt=n.excerpt,
                 tags=n.tags,
                 modified_at=n.modified_at,
-                # Title and tags are in the fingerprint: renaming or retagging
-                # changes what should be searchable even if the body is untouched.
-                fingerprint=_hash(f"{n.title}\n{n.excerpt}\n{','.join(n.tags)}"),
+                body=n.body or "",
+                # Everything searchable must be in the fingerprint. Title and tags:
+                # renaming or retagging changes what should match. The full body,
+                # not just the excerpt: an edit to paragraph five would otherwise be
+                # skipped, and search would keep matching the old text silently.
+                # (The excerpt is derived from the body, so it is covered too.)
+                fingerprint=_hash(f"{n.title}\n{','.join(n.tags)}\n{n.body or ''}"),
             )
             for n in notes
         ],
@@ -416,6 +432,7 @@ def _upsert(
     provider: str,
     title: str,
     excerpt: str,
+    searchable: str,
     tags: list[str],
     modified_at: datetime,
     content_hash: str,
@@ -426,6 +443,10 @@ def _upsert(
     terms 'B', and ts_rank scores A higher — so a note *called* "Audiotour" beats one
     that merely mentions it. Without this, title matches and passing mentions rank
     identically, which is almost never what you want.
+
+    `searchable` goes into the tsvector and nowhere else. The stored excerpt is for
+    showing a result; `searchable` is for finding it, and for a note it is the
+    whole body — stemmed lexemes and positions, which cannot be read back as text.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -437,7 +458,7 @@ def _upsert(
                     %(modified)s, %(hash)s, now(),
                     setweight(to_tsvector('english', %(title)s), 'A') ||
                     setweight(to_tsvector('english', %(tagtext)s), 'A') ||
-                    setweight(to_tsvector('english', %(excerpt)s), 'B'))
+                    setweight(to_tsvector('english', %(searchable)s), 'B'))
             on conflict (entity_id) do update set
                 provider           = excluded.provider,
                 title              = excluded.title,
@@ -453,6 +474,7 @@ def _upsert(
                 "provider": provider,
                 "title": title,
                 "excerpt": excerpt,
+                "searchable": searchable,
                 "tags": tags,
                 "tagtext": " ".join(tags),
                 "modified": modified_at,

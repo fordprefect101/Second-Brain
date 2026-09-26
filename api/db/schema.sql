@@ -171,6 +171,10 @@ create index if not exists note_snapshots_entity_idx
 -- second source of truth — exactly what Plan.md §2 forbids. The excerpt length
 -- check below enforces that architectural rule in the schema itself.
 --
+-- `document` is built from the FULL body, which does not cross that line: it
+-- holds stemmed lexemes and positions, not text anyone could read back. It can
+-- find a note; it cannot replace one. The line is about storing a readable copy.
+--
 -- FK to entity_map WITH cascade is correct here: both tables are cache, so they
 -- are rebuilt together. Contrast capture_items above, which has no FK precisely
 -- because it is canonical.

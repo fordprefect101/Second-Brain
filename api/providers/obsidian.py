@@ -134,13 +134,18 @@ class ObsidianVaultProvider:
 
     # -- NoteService -----------------------------------------------------
 
-    def list_notes(self, limit: int = 200) -> list[ProviderNote]:
+    def list_notes(
+        self, limit: int = 200, *, with_body: bool = False
+    ) -> list[ProviderNote]:
         """Every note, newest first.
 
         Reads the whole vault on every call — O(n) file reads, no caching. Fine at
         a few hundred notes on an SSD, and wrong at ten thousand. Step 9 adds the
         index that fixes it; doing it now would mean building cache invalidation
         before there is anything to invalidate.
+
+        with_body costs nothing extra: every file is read in full either way, and
+        this only decides whether the body is kept or discarded.
         """
         paths = [
             p
@@ -149,7 +154,7 @@ class ObsidianVaultProvider:
         ]
         paths.sort(key=lambda p: p.stat().st_mtime, reverse=True)
 
-        return [self._read(p, with_body=False) for p in paths[:limit]]
+        return [self._read(p, with_body=with_body) for p in paths[:limit]]
 
     def get_note(self, provider_id: str) -> ProviderNote | None:
         path = self._resolve(provider_id)

@@ -128,9 +128,36 @@ def test_excerpt_respects_the_length_constraint(db, provider, vault):
         assert cur.fetchone()["n"] <= 500
 
 
+def test_edits_past_the_excerpt_trigger_reindex(db, provider, vault):
+    """The whole body is searchable, so the fingerprint must cover the whole body.
+
+    Hashing only the excerpt would skip this edit, and search would keep matching
+    the old ending with nothing anywhere saying so.
+    """
+    opening = "Same opening paragraph. " * 20  # well past the excerpt
+    write_note(vault, "One.md", opening + "Ending about zebras.")
+    index_notes(db, provider)
+
+    write_note(vault, "One.md", opening + "Ending about giraffes.")
+    stats = index_notes(db, provider)
+
+    assert stats["indexed"] == 1
+
+
 # ---------------------------------------------------------------------------
 # Querying
 # ---------------------------------------------------------------------------
+
+
+def test_finds_a_word_past_the_excerpt(db, provider, vault):
+    """Only a short excerpt is stored, but the whole body is searchable."""
+    write_note(vault, "Long.md", "Filler sentence here. " * 30 + "The answer mentions zebras.")
+    index_notes(db, provider)
+
+    hits = search(db, "zebras")
+
+    assert [h.title for h in hits] == ["Long"]
+    assert "zebra" not in hits[0].excerpt  # the body text itself is not stored
 
 
 def test_finds_a_note_by_its_body(db, provider, vault):

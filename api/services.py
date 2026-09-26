@@ -46,7 +46,11 @@ class NoteService(Protocol):
 
     source_id: str
 
-    def list_notes(self, limit: int = 200) -> list[ProviderNote]: ...
+    # with_body=True is for the indexer, which needs every note's full text.
+    # Listings for display leave it off.
+    def list_notes(
+        self, limit: int = 200, *, with_body: bool = False
+    ) -> list[ProviderNote]: ...
 
     def get_note(self, provider_id: str) -> ProviderNote | None: ...
 
