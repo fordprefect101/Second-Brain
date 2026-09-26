@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 from uuid import UUID
 
 import psycopg
@@ -471,50 +472,71 @@ def search(
     *,
     limit: int = 20,
     source: str | None = None,
+    match: Literal["all", "any"] = "all",
 ) -> list[SearchHit]:
-    """Keyword search with prefix matching.
+    """Keyword search. Two modes, because the two callers want different things.
 
-    websearch_to_tsquery parses what people actually type — quoted phrases, OR, and
-    -exclusions — instead of demanding tsquery's & and | syntax. It does not do
-    prefix matching, so the last word is additionally matched as a prefix: typing
-    "transcrip" finds "transcription" while you are still typing.
+    match="all" — the search box. Someone typing "postgres docker" wants notes
+    about both, so every word must match. websearch_to_tsquery parses what people
+    actually type — quoted phrases, OR, and -exclusions — instead of demanding
+    tsquery's & and | syntax. It does not do prefix matching, so the last word is
+    additionally matched as a prefix: typing "transcrip" finds "transcription"
+    while you are still typing. The two queries are OR'd, so a full match still
+    wins on rank.
 
-    The two queries are OR'd, so an exact match still wins on rank.
+    match="any" — the assistant, which sends a whole question. A question never
+    has all its words in one note, so every-word matching found nothing and only
+    the last-word prefix ever matched: the first eval run scored 0 of 9. Here a
+    note matches if it contains ANY of the words, and ts_rank scores a note higher
+    the more of them it contains. No prefix: the question is finished, and a
+    finished word matched as a prefix is noise ("app" found "apply").
     """
     text = query.strip()
     if not text:
         return []
 
-    last_word = text.split()[-1]
-    # Strip characters that would be interpreted as tsquery operators.
-    prefix = "".join(c for c in last_word if c.isalnum() or c == "_")
+    if match == "any":
+        prefix = ""
+    else:
+        last_word = text.split()[-1]
+        # Strip characters that would be interpreted as tsquery operators.
+        prefix = "".join(c for c in last_word if c.isalnum() or c == "_")
 
     with conn.cursor() as cur:
         cur.execute(
             """
             with q as (
-                select websearch_to_tsquery('english', %(text)s) as exact,
+                select case
+                         -- plainto_tsquery stems and drops stop words, and joins
+                         -- the survivors with ' & '. Swapping that for ' | ' is
+                         -- the whole of match="any". An all-stop-word question
+                         -- becomes an empty query, which matches nothing.
+                         when %(match)s = 'any'
+                           then replace(plainto_tsquery('english', %(text)s)::text,
+                                        ' & ', ' | ')::tsquery
+                         else websearch_to_tsquery('english', %(text)s)
+                       end as words,
                        case when %(prefix)s = '' then null
                             else to_tsquery('english', %(prefix)s || ':*')
                        end as prefix
             )
             select s.entity_id, s.title, s.excerpt, s.provider, s.source_modified_at,
                    -- Score against whichever query actually matched, not just the
-                   -- exact one: a prefix-only hit would otherwise rank 0.0 and sort
-                   -- below everything. greatest() also means an exact match still
-                   -- outranks a prefix match on the same row.
+                   -- words one: a prefix-only hit would otherwise rank 0.0 and sort
+                   -- below everything. greatest() also means a full-word match
+                   -- still outranks a prefix match on the same row.
                    greatest(
-                     case when q.exact  is null then 0
-                          else ts_rank(s.document, q.exact) end,
+                     case when q.words  is null then 0
+                          else ts_rank(s.document, q.words) end,
                      case when q.prefix is null then 0
                           else ts_rank(s.document, q.prefix) end
                    ) as rank
               from search_index s, q
              -- The OR group MUST be parenthesised. AND binds tighter than OR, so
              -- without these brackets the source filter would apply only to the
-             -- prefix branch and exact matches would ignore it entirely.
+             -- prefix branch and word matches would ignore it entirely.
              where (
-                     (q.exact is not null and s.document @@ q.exact)
+                     (q.words is not null and s.document @@ q.words)
                   or (q.prefix is not null and s.document @@ q.prefix)
                    )
                -- ::text because Postgres cannot infer a NULL parameter's type.
@@ -522,7 +544,13 @@ def search(
              order by rank desc, s.source_modified_at desc nulls last
              limit %(limit)s
             """,
-            {"text": text, "prefix": prefix, "source": source, "limit": limit},
+            {
+                "text": text,
+                "prefix": prefix,
+                "match": match,
+                "source": source,
+                "limit": limit,
+            },
         )
         rows = cur.fetchall()
 

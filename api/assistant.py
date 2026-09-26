@@ -211,7 +211,8 @@ def _chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
 
 def ask(conn: psycopg.Connection, question: str, notes: NoteService) -> Answer:
     """Answer a question from the user's own indexed data."""
-    hits = search(conn, question, limit=SEARCH_LIMIT)
+    # "any": a whole question never has all its words in one note (see search()).
+    hits = search(conn, question, limit=SEARCH_LIMIT, match="any")
     bodies = _fetch_bodies(conn, hits, notes)
     context = build_context(hits, bodies)
 

@@ -204,3 +204,46 @@ def test_no_matches_returns_empty_list(db, provider, vault):
     index_notes(db, provider)
 
     assert search(db, "quantum") == []
+
+
+# ---------------------------------------------------------------------------
+# match="any" — whole questions, as the assistant sends them
+# ---------------------------------------------------------------------------
+
+
+def test_any_mode_finds_a_note_containing_only_some_words(db, provider, vault):
+    """The bug the eval found: a question never has ALL its words in one note."""
+    write_note(vault, "Pooling.md", "Discussion of connection pooling.")
+    index_notes(db, provider)
+
+    question = "why do we need pooling for the api"
+
+    assert search(db, question) == []  # every-word mode: "need" and "api" are missing
+    assert [h.title for h in search(db, question, match="any")] == ["Pooling"]
+
+
+def test_any_mode_ranks_notes_matching_more_words_higher(db, provider, vault):
+    write_note(vault, "Alpha.md", "Postgres connection pooling.")
+    write_note(vault, "Beta.md", "Postgres only.")
+    index_notes(db, provider)
+
+    hits = search(db, "postgres connection pooling", match="any")
+
+    assert [h.title for h in hits] == ["Alpha", "Beta"]
+    assert hits[0].rank > hits[1].rank
+
+
+def test_any_mode_does_not_prefix_match_the_last_word(db, provider, vault):
+    """Prefix matching is for typing in progress. A finished question's last word
+    matched as a prefix is how "app" found job applications and motor races."""
+    write_note(vault, "Transcription.md", "About audio.")
+    index_notes(db, provider)
+
+    assert search(db, "tell me about transcrip", match="any") == []
+
+
+def test_any_mode_with_only_stop_words_returns_nothing(db, provider, vault):
+    write_note(vault, "Note.md", "Why is it that cats sleep so much?")
+    index_notes(db, provider)
+
+    assert search(db, "why is it?", match="any") == []
