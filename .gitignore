@@ -55,3 +55,6 @@ pgdata/
 .vscode/
 .idea/
 .cursor/
+
+# Grader v2 check cache: derived, rebuildable, one line per model answer.
+evals/answers/.grader_cache.jsonl
