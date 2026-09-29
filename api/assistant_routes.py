@@ -45,11 +45,10 @@ class AskResponse(CamelModel):
 def ask_endpoint(payload: AskRequest, conn: ConnDep) -> AskResponse:
     """Answer a question from the vault, captures, calendar, tasks and repos.
 
-    Retrieval is keyword-only, because that is all that exists — semantic search
-    arrives in the AI layer once the keyword baseline's limits are demonstrable
-    (ADR-007). The visible consequence is that asking in words the notes do not
-    use returns nothing, and the model correctly says so. That is the evidence,
-    not a defect.
+    Retrieval is hybrid: keyword and vector search merged by rank (ADR-011), so a
+    question worded differently from the note can still find it. Keyword search
+    alone was the baseline until its limits were measured — every miss on the eval
+    set was a question in different words from its note (ADR-007's gate, met).
     """
     try:
         answer = ask(conn, payload.question.strip(), get_note_service())

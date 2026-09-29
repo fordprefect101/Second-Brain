@@ -3,11 +3,15 @@
 The shape, and why it is this shape:
 
     question
-       -> search()                    deterministic
-       -> fetch bodies of top notes   deterministic
+       -> retrieve()                  deterministic: keyword + vector, merged (ADR-011)
+       -> best section of each note   deterministic: chosen by vector similarity
        -> assemble context            deterministic
        -> ONE model call              the model only has to write prose
        -> answer + sources
+
+If the embedding model is down, retrieval falls back to keyword search and whole
+notes are read instead of sections — the pre-ADR-011 path, kept so the assistant
+still answers with AI search switched off.
 
 Retrieval happens **before** the model sees anything. The obvious alternative —
 give the model a search tool and let it decide when to call it — puts the least
@@ -18,43 +22,63 @@ emitted a tool call as plain text and invented a parameter that did not exist.
 So the happy path asks the model for one thing only: read this context, answer
 this question. It cannot fail to call a tool it was never asked to call.
 
-get_note is still offered, as an escape hatch for when the assembled context is
-not enough. If the model fumbles that call, the answer is merely worse rather
-than broken, because the pre-assembled context is already in front of it.
+get_note — a tool that lets the model ask for a whole note — exists but is OFF by
+default. It was meant as a rare escape hatch; once the model was handed sections
+instead of whole notes, llama3.1:8b called it on 30 of 30 questions, and the graded
+answer eval (2026-09-29) found no gain in correctness from it, answers 6x slower,
+and malformed tool calls returned as answers. offer_tools=True turns it back on,
+for testing whether a model can use it well.
 
 No framework (ADR-010). Ollama's /api/chat is plain HTTP.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+import re
+from dataclasses import dataclass, field
 from uuid import UUID
 
 import httpx
 import psycopg
 
 from api.entities import lookup_provider_id
-from api.search import SearchHit, search
+from api.hybrid import retrieve
+from api.search import SearchHit
 from api.services import NoteService
+
+logger = logging.getLogger("personal-os.assistant")
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
 MODEL = "llama3.1:8b"
+
+# Models with a "thinking" mode write out their reasoning before answering —
+# far slower, and not needed for short answers from retrieved text. Thinking is
+# switched off for these; stripping THINK_BLOCK in _chat is the safety net if a
+# reply carries reasoning anyway (an older Ollama ignores the switch).
+THINKING_MODELS = ("qwen3",)
+THINK_BLOCK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 
 # Ollama serves a much smaller window than the model supports unless told
 # otherwise, and it truncates silently — from the FRONT, which is where the
 # system prompt lives. Retrieved documents would push the rules out of context
 # and the first thing lost would be "an open task is not a completed one".
 #
-# 8192 holds two note bodies plus the system prompt without making a CPU-bound
-# model crawl.
+# 8192 is ample for five retrieved sections (~2-3K tokens with the rules). It was
+# not for two whole notes: measured on the eval questions, 5 of 30 prompts ran
+# over and 8 more left no room to answer — which is why notes are now read by
+# their best section (ADR-011). The fallback below still reads whole notes.
 NUM_CTX = 8192
+
+# Warn when a prompt reaches this share of the window (see _chat).
+OVERFLOW_WARNING = 0.9
 
 # How many index rows go into the prompt.
 SEARCH_LIMIT = 5
 
-# How many of those get their full body fetched. Only notes have a body worth
-# fetching — a task or calendar event is already complete in its index row.
-# Two, because a third note buys less relevance than it costs in context.
+# Fallback only, when vector search is unavailable: how many of the hits get their
+# full body fetched. Two, because a third note buys less relevance than it costs
+# in context — and even two can overflow, which the warning in _chat reports.
 FULL_TEXT_LIMIT = 2
 
 # A model that keeps re-calling the same tool would otherwise run forever.
@@ -118,6 +142,12 @@ class Source:
 class Answer:
     text: str
     sources: list[Source]
+    # "hybrid", or "keyword" if vector search was unavailable.
+    retrieval_mode: str = "hybrid"
+    # One entry per model call: tokens read and written, seconds, load time, tools
+    # asked for. What the answer eval records — and the raw material tracing
+    # (ADR-009) will send to Langfuse once it exists.
+    calls: list[dict] = field(default_factory=list)
 
 
 def _fetch_bodies(
@@ -184,16 +214,23 @@ def build_context(hits: list[SearchHit], bodies: dict[UUID, str]) -> str:
     return "\n\n".join(blocks)
 
 
-def _chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
-    """One call to Ollama. Raises AssistantUnavailable if it is not running."""
+def _chat(
+    messages: list[dict], tools: list[dict] | None = None, model: str = MODEL
+) -> tuple[dict, dict]:
+    """One call to Ollama: (the model's message, what the call cost).
+
+    Raises AssistantUnavailable if it is not running.
+    """
     payload: dict = {
-        "model": MODEL,
+        "model": model,
         "messages": messages,
         "stream": False,
         "options": {"num_ctx": NUM_CTX},
     }
     if tools:
         payload["tools"] = tools
+    if model.startswith(THINKING_MODELS):
+        payload["think"] = False
 
     try:
         response = httpx.post(OLLAMA_URL, json=payload, timeout=REQUEST_TIMEOUT)
@@ -201,20 +238,64 @@ def _chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
     except httpx.ConnectError as exc:
         raise AssistantUnavailable(
             "The local model is not running. Start it with `ollama serve`, "
-            f"and check that {MODEL} is pulled."
+            f"and check that {model} is pulled."
         ) from exc
     except httpx.HTTPError as exc:
         raise AssistantUnavailable(f"The local model failed: {exc}") from exc
 
-    return response.json()["message"]
+    data = response.json()
+
+    # Ollama cuts an oversized prompt silently, from the front, where the rules
+    # are. prompt_eval_count is how many tokens it actually read; at or near the
+    # window, some were probably lost. Say so — a quietly worse answer with no
+    # trace is the failure this exists to prevent.
+    used = data.get("prompt_eval_count")
+    if used is not None and used >= NUM_CTX * OVERFLOW_WARNING:
+        logger.warning(
+            "Prompt used %d of %d context tokens; the start, and with it the rules, "
+            "may have been cut off.",
+            used,
+            NUM_CTX,
+        )
+
+    # Ollama reports durations in nanoseconds. load is time spent loading the
+    # model into memory before any work — large when it was not already loaded.
+    stats = {
+        "prompt_tokens": used,
+        "output_tokens": data.get("eval_count"),
+        "seconds": round(data.get("total_duration", 0) / 1e9, 1),
+        "load_seconds": round(data.get("load_duration", 0) / 1e9, 1),
+    }
+    message = data["message"]
+    if message.get("content"):
+        message["content"] = THINK_BLOCK.sub("", message["content"])
+    return message, stats
 
 
-def ask(conn: psycopg.Connection, question: str, notes: NoteService) -> Answer:
-    """Answer a question from the user's own indexed data."""
-    # "any": a whole question never has all its words in one note (see search()).
-    hits = search(conn, question, limit=SEARCH_LIMIT, match="any")
-    bodies = _fetch_bodies(conn, hits, notes)
-    context = build_context(hits, bodies)
+def ask(
+    conn: psycopg.Connection,
+    question: str,
+    notes: NoteService,
+    *,
+    offer_tools: bool = False,
+    model: str = MODEL,
+) -> Answer:
+    """Answer a question from the user's own indexed data.
+
+    offer_tools=False (the default) withholds get_note, so the model answers from
+    the sections it was given. Off since the answer eval of 2026-09-29: with it on,
+    the model called it on 30 of 30 questions, for no gain in correctness at 6x the
+    time. True remains, to test whether a stronger model uses it selectively.
+
+    model picks the Ollama model, so the eval can compare candidates on the same
+    questions before the default changes.
+    """
+    retrieval = retrieve(conn, question, limit=SEARCH_LIMIT)
+    hits = retrieval.hits
+    # The best-matching section of each note, a few hundred tokens each. Only when
+    # vector search is unavailable does this fall back to reading whole notes —
+    # the path that used to overflow the context window.
+    context = build_context(hits, retrieval.context or _fetch_bodies(conn, hits, notes))
 
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -225,16 +306,22 @@ def ask(conn: psycopg.Connection, question: str, notes: NoteService) -> Answer:
     ]
 
     sources = [Source(id=h.id, title=h.title, source=h.source) for h in hits]
+    calls: list[dict] = []
+
+    def answer(text: str) -> Answer:
+        return Answer(text, sources, retrieval_mode=retrieval.mode, calls=calls)
 
     # The loop exists only for the get_note escape hatch. On the common path the
     # first response has no tool calls and this returns immediately.
     for _ in range(MAX_TURNS):
-        message = _chat(messages, tools=_TOOLS)
+        message, stats = _chat(messages, tools=_TOOLS if offer_tools else None, model=model)
         messages.append(message)
 
         tool_calls = message.get("tool_calls")
+        stats["tool_calls"] = [c.get("function", {}).get("name") for c in tool_calls or []]
+        calls.append(stats)
         if not tool_calls:
-            return Answer(text=message.get("content", "").strip(), sources=sources)
+            return answer(message.get("content", "").strip())
 
         for call in tool_calls:
             name = call.get("function", {}).get("name")
@@ -246,10 +333,9 @@ def ask(conn: psycopg.Connection, question: str, notes: NoteService) -> Answer:
 
     # Out of turns. Say so rather than returning an empty string that looks like a
     # considered "I don't know".
-    return Answer(
-        text="I could not settle on an answer — the model kept asking for more "
-        "information without concluding.",
-        sources=sources,
+    return answer(
+        "I could not settle on an answer — the model kept asking for more "
+        "information without concluding."
     )
 
 
