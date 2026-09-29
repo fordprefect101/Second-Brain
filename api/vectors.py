@@ -228,6 +228,38 @@ def vector_search(
     return _best_chunk_per_item(conn, query_vector, limit=limit)
 
 
+def top_chunks_of(
+    conn: psycopg.Connection, query_vector: Sequence[float], entity_id: UUID, limit: int
+) -> list[VectorHit]:
+    """One item's `limit` closest chunks, returned in DOCUMENT order.
+
+    Picked by similarity, then re-sorted by position, so the model reads the
+    sections in the order the note presents them rather than jumping around.
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            select entity_id, score, text, heading_path from (
+                select c.entity_id, c.position, c.text, c.heading_path,
+                       1 - (c.embedding <=> %(q)s::vector) as score
+                  from search_chunks c
+                 where c.entity_id = %(id)s
+                   and c.embedding is not null
+                   and c.embedder = %(sig)s
+                 order by c.embedding <=> %(q)s::vector
+                 limit %(limit)s
+            ) best
+            order by position
+            """,
+            {"q": _literal(query_vector), "id": entity_id, "sig": embedder_signature(), "limit": limit},
+        )
+        rows = cur.fetchall()
+    return [
+        VectorHit(r["entity_id"], float(r["score"]), r["text"], list(r["heading_path"]))
+        for r in rows
+    ]
+
+
 def best_chunks(
     conn: psycopg.Connection, query_vector: Sequence[float], entity_ids: list[UUID]
 ) -> dict[UUID, VectorHit]:

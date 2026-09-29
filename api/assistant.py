@@ -29,6 +29,10 @@ answer eval (2026-09-29) found no gain in correctness from it, answers 6x slower
 and malformed tool calls returned as answers. offer_tools=True turns it back on,
 for testing whether a model can use it well.
 
+That was the model, not the tool: offered the same tool on the same 30 questions,
+qwen3:8b fetched a note once (q019, a long headingless note — a sensible call),
+with no malformed calls. Worth re-enabling if the default model changes.
+
 No framework (ADR-010). Ollama's /api/chat is plain HTTP.
 """
 
@@ -43,7 +47,7 @@ import httpx
 import psycopg
 
 from api.entities import lookup_provider_id
-from api.hybrid import retrieve
+from api.hybrid import TOP_NOTE_SECTIONS, retrieve
 from api.search import SearchHit
 from api.services import NoteService
 
@@ -279,6 +283,7 @@ def ask(
     *,
     offer_tools: bool = False,
     model: str = MODEL,
+    top_note_sections: int = TOP_NOTE_SECTIONS,
 ) -> Answer:
     """Answer a question from the user's own indexed data.
 
@@ -290,7 +295,7 @@ def ask(
     model picks the Ollama model, so the eval can compare candidates on the same
     questions before the default changes.
     """
-    retrieval = retrieve(conn, question, limit=SEARCH_LIMIT)
+    retrieval = retrieve(conn, question, limit=SEARCH_LIMIT, top_note_sections=top_note_sections)
     hits = retrieval.hits
     # The best-matching section of each note, a few hundred tokens each. Only when
     # vector search is unavailable does this fall back to reading whole notes —

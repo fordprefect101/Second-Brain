@@ -205,6 +205,34 @@ def test_rrf_rewards_agreement_over_one_strong_vote():
     assert scores[a] > scores[c] > scores[b]
 
 
+def test_the_top_note_can_contribute_several_sections_in_document_order(db, provider, vault):
+    """q005: an answer spread across sections cannot be read from the single best
+    one. With top_note_sections=3 the top note sends three — in the order the note
+    presents them, not the order they scored."""
+    write_note(
+        vault,
+        "ADR.md",
+        f"## Context\n{FILLER}\n\n"
+        f"## Decision\npostgres search quality. {FILLER}\n\n"
+        f"## Tradeoffs\npostgres search cost. {FILLER}\n\n"
+        f"## Unrelated\n{FILLER}",
+    )
+    index_notes(db, provider)
+    embed_pending(db, embed=fake_documents)
+
+    [single] = retrieve(db, "postgres search", embed_query=fake_vector).context.values()
+    [several] = retrieve(
+        db, "postgres search", embed_query=fake_vector, top_note_sections=3
+    ).context.values()
+
+    assert single.startswith("[Decision]") and "[Tradeoffs]" not in single  # default: one
+    headings = [line for line in several.splitlines() if line.startswith("[")]
+    assert len(headings) == 3
+    assert "[Decision]" in headings and "[Tradeoffs]" in headings
+    order = ["[Context]", "[Decision]", "[Tradeoffs]", "[Unrelated]"]
+    assert [order.index(h) for h in headings] == sorted(order.index(h) for h in headings)
+
+
 def test_hybrid_returns_the_matching_section_not_the_whole_note(db, provider, vault):
     """What makes prompts small: the model reads one section, not the note."""
     write_note(

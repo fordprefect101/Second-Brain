@@ -26,7 +26,7 @@ from psycopg.rows import dict_row
 
 from api import embeddings
 from api.search import SearchHit, search
-from api.vectors import best_chunks, vector_search
+from api.vectors import VectorHit, best_chunks, top_chunks_of, vector_search
 
 logger = logging.getLogger("personal-os.hybrid")
 
@@ -34,6 +34,9 @@ Mode = Literal["keyword", "vector", "hybrid"]
 
 RRF_K = 60  # from the original RRF paper (Cormack et al., 2009); rarely worth tuning
 CANDIDATES = 20  # taken from each list before merging
+# Sections the top-ranked note contributes to the model's context. 1 until the
+# answer eval shows more is better (the q005 experiment).
+TOP_NOTE_SECTIONS = 1
 
 EmbedQuery = Callable[[str], list[float]]
 
@@ -91,7 +94,12 @@ def _hits_for(conn: psycopg.Connection, ids: list[UUID], scores: dict[UUID, floa
     ]
 
 
-def _context(conn: psycopg.Connection, query_vector: list[float], hits: list[SearchHit]) -> dict[UUID, str]:
+def _context(
+    conn: psycopg.Connection,
+    query_vector: list[float],
+    hits: list[SearchHit],
+    top_note_sections: int = 1,
+) -> dict[UUID, str]:
     """The best chunk of each NOTE among the hits.
 
     Only notes: a task or event is one short chunk that repeats its own index row,
@@ -99,11 +107,25 @@ def _context(conn: psycopg.Connection, query_vector: list[float], hits: list[Sea
     note — a few hundred tokens instead of a few thousand.
     """
     note_ids = [h.id for h in hits if h.source == "obsidian"]
-    chunks = best_chunks(conn, query_vector, note_ids)
-    return {
-        entity_id: (f"[{' › '.join(c.chunk_path)}]\n{c.chunk_text}" if c.chunk_path else c.chunk_text)
-        for entity_id, c in chunks.items()
-    }
+    context = {entity_id: _render(c) for entity_id, c in best_chunks(conn, query_vector, note_ids).items()}
+
+    # The top-ranked note may get more than its single best section. An answer
+    # spread across sections (ADR-005's protections, q005) cannot be read from one:
+    # both models failed q005 the same way. Code decides how much to send — the
+    # model is not asked to fetch more (get_note is off; ADR-011 follow-up).
+    if top_note_sections > 1 and note_ids:
+        top_note = note_ids[0]
+        sections = top_chunks_of(conn, query_vector, top_note, top_note_sections)
+        if sections:
+            context[top_note] = "\n\n".join(_render(c) for c in sections)
+    return context
+
+
+def _render(chunk: VectorHit) -> str:
+    """A chunk as the model reads it: its heading path, then its text."""
+    if chunk.chunk_path:
+        return f"[{' › '.join(chunk.chunk_path)}]\n{chunk.chunk_text}"
+    return chunk.chunk_text
 
 
 def retrieve(
@@ -113,11 +135,13 @@ def retrieve(
     limit: int = 5,
     mode: Mode = "hybrid",
     embed_query: EmbedQuery = embeddings.embed_query,
+    top_note_sections: int = TOP_NOTE_SECTIONS,
 ) -> Retrieval:
     """The top `limit` items for a question, plus the chunk text to answer from.
 
     mode="keyword" and mode="vector" exist for the eval, to measure each half on
-    its own. The assistant uses "hybrid".
+    its own. The assistant uses "hybrid". top_note_sections is how many sections
+    the top-ranked note contributes (every other note contributes one).
     """
     keyword = [] if mode == "vector" else search(conn, question, limit=CANDIDATES, match="any")
     if mode == "keyword":
@@ -152,4 +176,4 @@ def retrieve(
             hit.rank = scores[i]  # the fused score, not ts_rank
             hits.append(hit)
 
-    return Retrieval(hits, _context(conn, query_vector, hits), mode=mode)
+    return Retrieval(hits, _context(conn, query_vector, hits, top_note_sections), mode=mode)

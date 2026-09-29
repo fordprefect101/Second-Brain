@@ -38,6 +38,7 @@ from pathlib import Path
 from psycopg.rows import dict_row
 
 from api.assistant import MODEL, AssistantUnavailable, ask
+from api.hybrid import TOP_NOTE_SECTIONS
 from api.config import config
 from api.database import connect
 from api.providers.obsidian import ObsidianVaultProvider
@@ -101,7 +102,13 @@ def save_records(name: str, records: list[dict]) -> None:
     tmp.replace(path)  # never leave a half-written file behind
 
 
-def run(name: str, only: set[str] | None, offer_tools: bool = False, model: str = MODEL) -> int:
+def run(
+    name: str,
+    only: set[str] | None,
+    offer_tools: bool = False,
+    model: str = MODEL,
+    top_note_sections: int = TOP_NOTE_SECTIONS,
+) -> int:
     questions = [q for q in load_dataset() if not only or q["id"] in only]
     records = load_records(name)
     done = {r["id"] for r in records}
@@ -114,7 +121,14 @@ def run(name: str, only: set[str] | None, offer_tools: bool = False, model: str 
         for n, q in enumerate(todo, start=1):
             started = time.time()
             try:
-                answer = ask(conn, q["question"], notes, offer_tools=offer_tools, model=model)
+                answer = ask(
+                    conn,
+                    q["question"],
+                    notes,
+                    offer_tools=offer_tools,
+                    model=model,
+                    top_note_sections=top_note_sections,
+                )
             except AssistantUnavailable as exc:
                 print(f"\nStopped: {exc}\nFinished answers are saved; re-run to resume.")
                 return 1
@@ -135,6 +149,7 @@ def run(name: str, only: set[str] | None, offer_tools: bool = False, model: str 
                 "retrieval_mode": answer.retrieval_mode,
                 "tools_offered": offer_tools,
                 "model": model,
+                "top_note_sections": top_note_sections,
                 # None for traps: there was nothing to find.
                 "retrieval_found": any(refs.get(s.id) in expected for s in answer.sources)
                 if q["answerable"]
@@ -238,9 +253,21 @@ def main() -> int:
     # Tools are off by default now; kept so the commands in earlier runs still work.
     parser.add_argument("--no-tools", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--model", default=MODEL, help=f"Ollama model (default {MODEL})")
+    parser.add_argument(
+        "--top-note-sections",
+        type=int,
+        default=TOP_NOTE_SECTIONS,
+        help=f"sections the top-ranked note contributes (default {TOP_NOTE_SECTIONS})",
+    )
     args = parser.parse_args()
     only = set(args.only.split(",")) if args.only else None
-    return run(args.name, only, offer_tools=args.tools, model=args.model)
+    return run(
+        args.name,
+        only,
+        offer_tools=args.tools,
+        model=args.model,
+        top_note_sections=args.top_note_sections,
+    )
 
 
 if __name__ == "__main__":
