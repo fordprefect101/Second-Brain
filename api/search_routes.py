@@ -27,6 +27,7 @@ from api.search import (
     index_tasks,
     search,
 )
+from api.vectors import embed_pending, pending_count
 
 router = APIRouter(tags=["search"])
 
@@ -58,6 +59,10 @@ class IndexStats(CamelModel):
     tasks: dict[str, int]
     repositories: dict[str, int]
     errors: dict[str, str] = {}
+    # {"embedded": chunks embedded this run, "pending": chunks still without a
+    # current vector}. Pending above zero after a run means search is partly
+    # keyword-only until the next one — errors["embeddings"] says why.
+    embeddings: dict[str, int] = {}
 
 
 @router.get("/search", response_model=list[SearchResult])
@@ -111,6 +116,9 @@ def run_reindex(conn: psycopg.Connection) -> IndexStats:
         except Exception as exc:
             # Deliberately broad: any provider failure — auth expired, rate
             # limited, network down — should cost that one source, not the run.
+            # Roll back so a failure mid-write cannot leave the connection in an
+            # aborted transaction that fails every source after it.
+            conn.rollback()
             stats[name] = dict(empty)
             errors[name] = f"{type(exc).__name__}: {exc}"[:200]
 
@@ -124,6 +132,16 @@ def run_reindex(conn: psycopg.Connection) -> IndexStats:
     attempt("tasks", lambda: index_tasks(conn, GoogleTasksProvider(REPO_ROOT)))
     attempt("repositories", lambda: index_repositories(conn, GitHubProvider()))
 
+    # Vectors last, over whatever the sources above left pending. Its own failure
+    # — Ollama not running — costs meaning search, not the keyword index.
+    try:
+        embedded = embed_pending(conn)
+    except Exception as exc:
+        conn.rollback()
+        embedded = {"embedded": 0}
+        errors["embeddings"] = f"{type(exc).__name__}: {exc}"[:200]
+    embedded["pending"] = pending_count(conn)
+
     return IndexStats(
         notes=stats["notes"],
         captures=stats["captures"],
@@ -131,4 +149,5 @@ def run_reindex(conn: psycopg.Connection) -> IndexStats:
         tasks=stats["tasks"],
         repositories=stats["repositories"],
         errors=errors,
+        embeddings=embedded,
     )

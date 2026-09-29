@@ -34,6 +34,7 @@ import psycopg
 
 from api.entities import resolve_ids
 from api.services import ActivityService, CalendarService, NoteService, TaskService
+from api.vectors import chunks_for, replace_chunks
 
 EXCERPT_LIMIT = 500  # matches the CHECK constraint in schema.sql
 
@@ -45,7 +46,7 @@ EXCERPT_LIMIT = 500  # matches the CHECK constraint in schema.sql
 # is a genuinely confusing failure — the code is right, the index is stale, and
 # nothing says so. Folding the version into every fingerprint makes an indexer
 # change invalidate the cache automatically.
-INDEXER_VERSION = 5  # 5: notes searchable on their full body, not the excerpt
+INDEXER_VERSION = 6  # 6: every item also written as chunks for vector search
 
 
 @dataclass
@@ -159,6 +160,10 @@ def index_source(
             modified_at=item.modified_at,
             content_hash=item.fingerprint,
         )
+        # Chunks are rewritten on exactly the same trigger as the row above, so
+        # their text can never outlive what it came from (ADR-011). Vectors are
+        # filled afterwards by the embedding pass — see api/vectors.py.
+        replace_chunks(conn, entity_id, chunks_for(item.title, item.body, item.excerpt))
         stats["indexed"] += 1
 
     if prune:

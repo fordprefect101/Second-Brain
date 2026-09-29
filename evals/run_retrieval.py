@@ -1,14 +1,17 @@
-"""Retrieval eval: does search() put the right item in the top k?
+"""Retrieval eval: does retrieval put the right item in the top k?
 
 Run from the repo root, against the real index — rebuild it first (Settings →
 Rebuild), or the eval measures yesterday's index:
 
     .venv/bin/python -m evals.run_retrieval
+    .venv/bin/python -m evals.run_retrieval --mode keyword
     .venv/bin/python -m evals.run_retrieval --save NAME --config "what changed"
     .venv/bin/python -m evals.run_retrieval --check
 
-It calls search() exactly as the assistant does — same match mode, same k — so
-the score describes what the assistant actually receives, not the search box.
+It calls retrieve() exactly as the assistant does — same function, same k — so
+the score describes what the assistant actually receives. --mode measures one half
+on its own: `keyword` or `vector`. The default, `hybrid`, is what the assistant
+uses (ADR-011).
 
 Scoring:
   recall@k  fraction of answerable questions with an expected item in the top k
@@ -38,7 +41,7 @@ from psycopg.rows import dict_row
 
 from api.assistant import SEARCH_LIMIT
 from api.database import connect
-from api.search import search
+from api.hybrid import retrieve
 
 HERE = Path(__file__).resolve().parent
 DATASET = HERE / "dataset.jsonl"
@@ -85,7 +88,9 @@ def _refs_for(conn: psycopg.Connection, ids: list) -> dict:
     return {r["id"]: (r["provider"], r["provider_id"]) for r in rows}
 
 
-def evaluate(conn: psycopg.Connection, rows: list[dict], k: int) -> list[Result]:
+def evaluate(
+    conn: psycopg.Connection, rows: list[dict], k: int, mode: str = "hybrid"
+) -> list[Result]:
     indexed = _indexed_refs(conn)
     results = []
 
@@ -99,8 +104,8 @@ def evaluate(conn: psycopg.Connection, rows: list[dict], k: int) -> list[Result]
         expected = {(e["source"], e["provider_id"]) for e in row["expected"]}
         result.unknown_labels = sorted(expected - indexed)
 
-        # match="any" and this k are what the assistant uses (assistant.py).
-        hits = search(conn, row["question"], limit=k, match="any")
+        # The same call, and the same k, as the assistant (assistant.py).
+        hits = retrieve(conn, row["question"], limit=k, mode=mode).hits
         refs = _refs_for(conn, [h.id for h in hits])
         result.top = [h.title for h in hits]
         result.rank = next(
@@ -193,7 +198,7 @@ def report(results: list[Result], summary: dict, k: int) -> None:
         print(f"NOT SCORED (fix the labels): {', '.join(skipped)}")
 
 
-def save(summary: dict, name: str, config: str, k: int, dataset_size: int) -> None:
+def save(summary: dict, name: str, config: str, k: int, dataset_size: int, mode: str) -> None:
     data = (
         json.loads(BASELINES.read_text(encoding="utf-8"))
         if BASELINES.exists()
@@ -205,6 +210,7 @@ def save(summary: dict, name: str, config: str, k: int, dataset_size: int) -> No
             "date": date.today().isoformat(),
             "config": config,
             "k": k,
+            "mode": mode,
             "dataset_size": dataset_size,
             **summary,
         }
@@ -215,6 +221,12 @@ def save(summary: dict, name: str, config: str, k: int, dataset_size: int) -> No
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--k", type=int, default=SEARCH_LIMIT)
+    parser.add_argument(
+        "--mode",
+        choices=["hybrid", "keyword", "vector"],
+        default="hybrid",
+        help="what to measure; hybrid is what the assistant uses",
+    )
     parser.add_argument("--save", metavar="NAME", help="append this run to baselines.json")
     parser.add_argument("--config", default="", help="what this run measured, for --save")
     parser.add_argument(
@@ -227,7 +239,7 @@ def main() -> int:
     rows = load_dataset()
     with connect() as conn:
         conn.row_factory = dict_row
-        results = evaluate(conn, rows, args.k)
+        results = evaluate(conn, rows, args.k, args.mode)
 
     summary = summarize(results)
     report(results, summary, args.k)
@@ -248,7 +260,7 @@ def main() -> int:
         regressions = [line for line in worse if line.endswith("missed")]
 
     if args.save:
-        save(summary, args.save, args.config, args.k, len(rows))
+        save(summary, args.save, args.config, args.k, len(rows), args.mode)
         print(f"\nsaved as '{args.save}' in {BASELINES.name}")
 
     if args.check and regressions:

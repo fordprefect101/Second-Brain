@@ -8,7 +8,9 @@
 
 services:
   db:
-    image: postgres:17
+    # The official postgres:17 image plus the pgvector extension (ADR-011, ADR-012).
+    # Same Postgres major version, so the data in ./pgdata carries over unchanged.
+    image: pgvector/pgvector:pg17
     container_name: personal-os-db
     restart: unless-stopped
     environment:

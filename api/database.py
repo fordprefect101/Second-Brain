@@ -26,6 +26,7 @@ EXPECTED_TABLES = {
     "entity_map",
     "note_snapshots",
     "search_index",
+    "search_chunks",
     "sync_state",
 }
 

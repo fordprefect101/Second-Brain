@@ -15,6 +15,9 @@ export interface IndexStats {
   tasks: SourceStats;
   repositories: SourceStats;
   errors: Record<string, string>;
+  // Vectors for meaning search (ADR-011). pending > 0 after a rebuild means some
+  // items are keyword-searchable only until the next one.
+  embeddings?: { embedded: number; pending: number };
 }
 
 export function search(
@@ -41,6 +44,8 @@ export function summarizeIndexStats(s: IndexStats): string {
     `${s.tasks.indexed + s.tasks.skipped} tasks`,
     `${s.repositories.indexed + s.repositories.skipped} repos`,
   ];
+  const pending = s.embeddings?.pending ?? 0;
+  if (pending) parts.push(`${pending} not yet embedded`);
   const failed = Object.keys(s.errors ?? {});
   return (
     parts.join(' · ') +

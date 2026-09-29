@@ -205,3 +205,40 @@ create index if not exists search_index_document_idx
 
 create index if not exists search_index_provider_idx
     on search_index (provider);
+
+-- ---------------------------------------------------------------------------
+-- 6. search_chunks — derived, disposable (ADR-011, ADR-012)
+-- ---------------------------------------------------------------------------
+-- Every indexed item split into chunks, each with an embedding for meaning
+-- search. A note is split at its headings; a task, event, repo or capture is one
+-- chunk. This table holds chunk TEXT, which search_index deliberately does not —
+-- ADR-011 argues why that still passes the drop test: chunks are rewritten
+-- whenever their item's fingerprint changes, deleted with it (cascade below), and
+-- never read as the note itself. Dropping this table costs a reindex, nothing more.
+
+-- pgvector: the vector type and distance operators. Needs the pgvector/pgvector
+-- image (docker-compose.yml); the plain postgres image does not ship it.
+create extension if not exists vector;
+
+create table if not exists search_chunks (
+    id            bigint      generated always as identity primary key,
+    entity_id     uuid        not null
+                  references search_index(entity_id) on delete cascade,
+    position      integer     not null,              -- order within its item
+    heading_path  text[]      not null default '{}', -- headings above this chunk
+    text          text        not null,
+
+    -- NULL until embedded. A chunk is "pending" when this is NULL or `embedder`
+    -- differs from the current signature (model + prefixes + header mode), so a
+    -- model change re-embeds exactly what it must. 768 = nomic-embed-text; a model
+    -- with a different size needs this column changed too.
+    embedding     vector(768),
+    embedder      text,
+
+    unique (entity_id, position)
+);
+
+-- No ANN index (HNSW) on embedding: exact search until measured past ~200ms
+-- (ADR-008). At a few hundred chunks a full scan takes milliseconds.
+create index if not exists search_chunks_pending_idx
+    on search_chunks (embedder) where embedding is null;
