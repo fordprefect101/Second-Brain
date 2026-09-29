@@ -150,6 +150,8 @@ def run(
                 "tools_offered": offer_tools,
                 "model": model,
                 "top_note_sections": top_note_sections,
+                # What the model was given — the AI grader judges against it.
+                "context": answer.context,
                 # None for traps: there was nothing to find.
                 "retrieval_found": any(refs.get(s.id) in expected for s in answer.sources)
                 if q["answerable"]
@@ -171,8 +173,12 @@ def run(
     return 0
 
 
-def summarize(records: list[dict]) -> dict:
-    """Auto-check counts always; hand-grade counts once there are grades."""
+def summarize(records: list[dict], grade_field: str = "grade") -> dict:
+    """Auto-check counts always; grade counts once there are grades.
+
+    grade_field picks WHOSE grades: "grade" (a person's, or Claude's marked
+    [Claude]) or "ai_grade" (the AI grader's, ADR-014). Never mixed in one summary.
+    """
     answerable = [r for r in records if r["answerable"]]
     traps = [r for r in records if not r["answerable"]]
     # The model's own reported working time, not wall-clock: a laptop that sleeps
@@ -199,27 +205,31 @@ def summarize(records: list[dict]) -> dict:
         "total_load_seconds": round(sum(load), 1),
     }
 
-    graded = [r for r in records if r["grade"]]
+    def g(r: dict) -> str | None:
+        return r.get(grade_field)
+
+    graded = [r for r in records if g(r)]
     if graded:
         graded_answerable = [r for r in graded if r["answerable"]]
+        summary["grader"] = grade_field
         summary["graded"] = len(graded)
-        summary["grades"] = dict(Counter(r["grade"] for r in graded))
-        summary["correct"] = sum(r["grade"] == "correct" for r in graded_answerable)
+        summary["grades"] = dict(Counter(g(r) for r in graded))
+        summary["correct"] = sum(g(r) == "correct" for r in graded_answerable)
         summary["graded_answerable"] = len(graded_answerable)
         # On a trap, the right behaviour IS refusing — so a grader may reasonably
         # mark a clean refusal either "refused" or "correct". Both count.
         summary["traps_correct"] = sum(
-            r["grade"] in ("refused", "correct") for r in graded if not r["answerable"]
+            g(r) in ("refused", "correct") for r in graded if not r["answerable"]
         )
         # The split that says which half to fix.
-        not_correct = [r for r in graded_answerable if r["grade"] != "correct"]
+        not_correct = [r for r in graded_answerable if g(r) != "correct"]
         summary["generation_failures"] = sum(bool(r["retrieval_found"]) for r in not_correct)
         summary["retrieval_failures"] = sum(not r["retrieval_found"] for r in not_correct)
         per_tag: dict[str, list[int]] = {}
         for r in graded_answerable:
             for tag in r["tags"]:
                 bucket = per_tag.setdefault(tag, [0, 0])
-                bucket[0] += r["grade"] == "correct"
+                bucket[0] += g(r) == "correct"
                 bucket[1] += 1
         summary["correct_by_tag"] = {t: f"{c}/{n}" for t, (c, n) in sorted(per_tag.items())}
     return summary
@@ -233,7 +243,8 @@ def print_summary(s: dict) -> None:
           f"{s['total_load_seconds']}s total spent loading the model")
     print(f"called a tool (get_note) on {s['used_a_tool']} of {s['answered']} answers")
     if "graded" in s:
-        print(f"\ngraded {s['graded']}: {s['grades']}")
+        who = "AI grader" if s.get("grader") == "ai_grade" else "hand"
+        print(f"\ngraded {s['graded']} ({who}): {s['grades']}")
         print(f"correct {s['correct']}/{s['graded_answerable']} answerable   "
               f"traps handled {s['traps_correct']}/{s['traps']}")
         print(f"not correct -> generation failures {s['generation_failures']}   "

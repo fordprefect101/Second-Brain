@@ -152,6 +152,9 @@ class Answer:
     # asked for. What the answer eval records — and the raw material tracing
     # (ADR-009) will send to Langfuse once it exists.
     calls: list[dict] = field(default_factory=list)
+    # The search results the model was given (the prompt's "context" part). The AI
+    # grader needs it: "hallucinated" means stating what was NOT in front of it.
+    context: str = ""
 
 
 def _fetch_bodies(
@@ -314,7 +317,7 @@ def ask(
     calls: list[dict] = []
 
     def answer(text: str) -> Answer:
-        return Answer(text, sources, retrieval_mode=retrieval.mode, calls=calls)
+        return Answer(text, sources, retrieval_mode=retrieval.mode, calls=calls, context=context)
 
     # The loop exists only for the get_note escape hatch. On the common path the
     # first response has no tool calls and this returns immediately.
