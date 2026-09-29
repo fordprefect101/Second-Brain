@@ -435,6 +435,99 @@
           "total": 2
         }
       }
+    },
+    {
+      "name": "2026-09-30-q022-widened",
+      "date": "2026-09-30",
+      "config": "hybrid rrf, header none; q022 also accepts ADR-012, How my assistant works, Embeddings experiments",
+      "k": 5,
+      "mode": "hybrid",
+      "dataset_size": 30,
+      "recall_at_k": 0.96,
+      "mrr": 0.743,
+      "found": 24,
+      "answerable": 25,
+      "per_question": {
+        "q001": 1,
+        "q002": 1,
+        "q003": 1,
+        "q004": 3,
+        "q005": 2,
+        "q006": 5,
+        "q007": 1,
+        "q008": 2,
+        "q009": 2,
+        "q011": 1,
+        "q012": 1,
+        "q013": 5,
+        "q014": 1,
+        "q015": 1,
+        "q016": 1,
+        "q017": 3,
+        "q018": 1,
+        "q019": 1,
+        "q020": 1,
+        "q021": 1,
+        "q022": 2,
+        "q023": 1,
+        "q024": null,
+        "q025": 2,
+        "q026": 1
+      },
+      "per_tag": {
+        "conceptual": {
+          "found": 2,
+          "total": 2
+        },
+        "distractors": {
+          "found": 3,
+          "total": 3
+        },
+        "false-premise": {
+          "found": 1,
+          "total": 1
+        },
+        "live": {
+          "found": 1,
+          "total": 2
+        },
+        "many-related-docs": {
+          "found": 1,
+          "total": 1
+        },
+        "negation": {
+          "found": 1,
+          "total": 1
+        },
+        "no-exact-keyword": {
+          "found": 4,
+          "total": 5
+        },
+        "no-product-name": {
+          "found": 3,
+          "total": 3
+        },
+        "paraphrased": {
+          "found": 16,
+          "total": 16
+        },
+        "personal-note": {
+          "found": 6,
+          "total": 6
+        },
+        "repo": {
+          "found": 1,
+          "total": 1
+        },
+        "similar-docs": {
+          "found": 1,
+          "total": 1
+        },
+        "task": {
+          "found": 1,
+          "total": 2
+        }
+      }
     }
   ],
   "answers": [

@@ -47,6 +47,7 @@ from api.config import config
 from api.database import connect
 from api.providers.obsidian import ObsidianVaultProvider
 from evals.judge import GraderUnavailable, api_key, context_for, is_correct, reference_for
+from evals.run_answers import REFUSAL
 from evals.run_answers import check as auto_check
 from evals.run_answers import load_dataset, load_records, save_records
 from evals.run_retrieval import BASELINES
@@ -54,7 +55,9 @@ from evals.run_retrieval import BASELINES
 # v2.1: per-part source caps (the context was being cut off), a "different things"
 # check, the question inside the point check, and a more explicit refusal check —
 # each from a miss in the first smoke test on the 8 known failures (4 caught).
-VERSION = "v2.1"
+# v2.2: sentences that state no fact (a bare refusal, a lead-in ending in a colon) are
+# skipped by code: qwen3 was calling "I don't have anything on that." unsupported.
+VERSION = "v2.2"
 HERE = Path(__file__).resolve().parent
 CACHE = HERE / "answers" / ".grader_cache.jsonl"
 VALIDATION_RUNS = [
@@ -273,6 +276,18 @@ def sentences(answer: str) -> list[str]:
     return kept[:MAX_SENTENCES]
 
 
+# A refusal with a claim tacked on ("..., but RabbitMQ was chosen") is still checked.
+_CLAIM_AFTER = re.compile(r"\b(but|however|although|though|instead)\b", re.IGNORECASE)
+
+
+def states_no_fact(sentence: str) -> bool:
+    """A lead-in to a list, or only a statement that nothing was found: nothing in it
+    could be invented, so it is not sent to the model."""
+    if sentence.endswith(":"):
+        return True
+    return bool(REFUSAL.search(sentence)) and not _CLAIM_AFTER.search(sentence)
+
+
 def _points(key_points: dict) -> str:
     must = "\n".join(f"- {p}" for p in key_points.get("must", []))
     also = "\n".join(f"- {p}" for p in key_points.get("also", []))
@@ -309,6 +324,9 @@ def grade_answer(checker: Checker, record: dict, key_points: dict | None, source
 
     # 2. Every sentence against the source: one invented claim is enough (rule C).
     for sentence in sentences(text):
+        if states_no_fact(sentence):
+            checks.append({"check": "supported", "answer": "skipped", "by": "code", "sentence": sentence})
+            continue
         supported = ask(
             "supported",
             f"SOURCE TEXT:\n{source}\n\nSENTENCE: {sentence}\n\n"

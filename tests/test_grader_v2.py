@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from evals.grader_v2 import CheckCache, Checker, grade_answer, sentences
+from evals.grader_v2 import CheckCache, Checker, grade_answer, sentences, states_no_fact
 from evals.judge import GraderUnavailable
 
 KEY_POINTS = {"must": ["Point one", "Point two"], "also": ["A bonus"]}
@@ -92,6 +92,19 @@ def test_an_invented_claim_beside_a_refusal_is_hallucinated(tmp_path):
     """q010: hedging does not excuse the invented decision."""
     answer = "It is not mentioned. However, RabbitMQ was chosen for the queue."
     assert grade(FakeModel(supported="no", refusal="yes"), answer=answer, answerable=False, tmp_path=tmp_path) == "hallucinated"
+
+
+def test_a_bare_refusal_is_not_sent_for_the_supported_check(tmp_path):
+    """v2.2: qwen3 called "I don't have anything on that." unsupported."""
+    refusal = "I don't have anything on that."
+    assert grade(FakeModel(supported="no", refusal="yes"), answer=refusal, answerable=False, tmp_path=tmp_path) == "correct"
+
+
+def test_sentences_that_state_no_fact_are_told_apart_by_code():
+    assert states_no_fact("I don't have anything on that.")
+    assert states_no_fact("According to your notes, the reasons are:")
+    assert not states_no_fact("It is not mentioned, but RabbitMQ was chosen.")
+    assert not states_no_fact("Postgres was chosen over SQLite.")
 
 
 def test_an_unchanged_answer_is_never_checked_twice(tmp_path):
