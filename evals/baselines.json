@@ -479,6 +479,73 @@
         "similar-docs": "1/1",
         "task": "1/2"
       }
+    },
+    {
+      "name": "llama-3sections-2026-09-29",
+      "date": "2026-09-29",
+      "answered": 30,
+      "malformed": 0,
+      "traps_refused": 5,
+      "traps": 5,
+      "refused_despite_retrieval": 3,
+      "used_a_tool": 0,
+      "median_seconds": 23.799999999999997,
+      "median_prompt_tokens": 1645.5,
+      "total_load_seconds": 7.1,
+      "graded": 30,
+      "grades": {
+        "correct": 17,
+        "wrong": 2,
+        "refused": 3,
+        "partial": 7,
+        "hallucinated": 1
+      },
+      "correct": 12,
+      "graded_answerable": 25,
+      "traps_correct": 5,
+      "generation_failures": 11,
+      "retrieval_failures": 2,
+      "correct_by_tag": {
+        "conceptual": "0/2",
+        "distractors": "3/3",
+        "false-premise": "0/1",
+        "live": "0/2",
+        "many-related-docs": "0/1",
+        "negation": "1/1",
+        "no-exact-keyword": "1/5",
+        "no-product-name": "1/3",
+        "paraphrased": "7/16",
+        "personal-note": "5/6",
+        "repo": "1/1",
+        "similar-docs": "1/1",
+        "task": "0/2"
+      }
+    }
+  ],
+  "grader_validation": [
+    {
+      "date": "2026-09-29",
+      "model": "gpt-4.1-mini",
+      "runs": [
+        "hybrid-2026-09-28",
+        "no-tools-2026-09-29",
+        "qwen3-no-tools-2026-09-29",
+        "llama-3sections-2026-09-29"
+      ],
+      "gate": 0.85,
+      "passed": false,
+      "user": {
+        "n": 30,
+        "agree": 0.633,
+        "kappa": 0.154,
+        "exact": 0.6
+      },
+      "claude": {
+        "n": 90,
+        "agree": 0.756,
+        "kappa": 0.397,
+        "exact": 0.644
+      }
     }
   ]
 }
