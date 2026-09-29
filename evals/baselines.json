@@ -546,6 +546,30 @@
         "kappa": 0.397,
         "exact": 0.644
       }
+    },
+    {
+      "date": "2026-09-29",
+      "model": "gpt-4.1",
+      "runs": [
+        "hybrid-2026-09-28",
+        "no-tools-2026-09-29",
+        "qwen3-no-tools-2026-09-29",
+        "llama-3sections-2026-09-29"
+      ],
+      "gate": 0.85,
+      "passed": false,
+      "user": {
+        "n": 30,
+        "agree": 0.8,
+        "kappa": 0.595,
+        "exact": 0.733
+      },
+      "claude": {
+        "n": 90,
+        "agree": 0.8,
+        "kappa": 0.54,
+        "exact": 0.689
+      }
     }
   ]
 }

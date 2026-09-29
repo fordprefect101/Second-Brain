@@ -183,7 +183,7 @@ def _call(key: str, messages: list[dict]) -> tuple[dict, dict]:
         },
     }
     last = ""
-    for attempt in range(4):
+    for attempt in range(8):
         try:
             response = httpx.post(
                 OPENAI_URL,
@@ -214,10 +214,27 @@ def _call(key: str, messages: list[dict]) -> tuple[dict, dict]:
             raise GraderUnavailable("No quota left on the OpenAI account: check billing and limits.")
         if response.status_code in (429, 500, 502, 503):
             last = f"HTTP {response.status_code}"
-            time.sleep(2 ** (attempt + 1))
+            time.sleep(_retry_after(response, attempt))
             continue
         raise GraderUnavailable(f"OpenAI returned HTTP {response.status_code}.")
     raise GraderUnavailable(f"OpenAI kept failing ({last}); try again later.")
+
+
+def _retry_after(response, attempt: int) -> float:
+    """How long to wait before retrying: what OpenAI says, else exponential backoff.
+
+    A 429 is usually a per-minute token limit, which lower account tiers hit fast
+    with a large model: waiting the stated time is enough, retrying sooner is not.
+    """
+    headers = getattr(response, "headers", {}) or {}
+    for name, scale in (("retry-after-ms", 0.001), ("retry-after", 1.0)):
+        value = headers.get(name)
+        if value:
+            try:
+                return min(float(value) * scale + 0.5, 90.0)
+            except ValueError:
+                pass
+    return min(2.0 ** (attempt + 1), 60.0)
 
 
 def grade_record(conn, notes, key: str, record: dict) -> dict:

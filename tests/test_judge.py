@@ -94,6 +94,27 @@ def test_no_quota_fails_at_once_instead_of_retrying(monkeypatch):
     assert len(calls) == 1
 
 
+def test_a_rate_limit_waits_as_long_as_openai_says(monkeypatch):
+    """gpt-4.1 on a low account tier hits per-minute limits fast; the stated wait works."""
+    replies = [
+        FakeResponse(429, "rate limited"),
+        FakeResponse(200, ""),
+    ]
+    replies[0].headers = {"retry-after": "12"}
+    replies[1].json = lambda: {
+        "choices": [{"message": {"content": '{"reasoning": "r", "grade": "correct"}'}}],
+        "usage": {},
+    }
+    slept = []
+    monkeypatch.setattr(judge.httpx, "post", lambda *a, **k: replies.pop(0))
+    monkeypatch.setattr(judge.time, "sleep", slept.append)
+
+    verdict, _ = judge._call(KEY, [])
+
+    assert verdict["grade"] == "correct"
+    assert slept == [12.5]
+
+
 def test_on_a_trap_refusing_is_correct():
     answerable, trap = {"answerable": True}, {"answerable": False}
     assert judge.is_correct(answerable, "correct")
