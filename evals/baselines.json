@@ -528,6 +528,99 @@
           "total": 2
         }
       }
+    },
+    {
+      "name": "2026-09-30-temp01",
+      "date": "2026-09-30",
+      "config": "baseline",
+      "k": 5,
+      "mode": "hybrid",
+      "dataset_size": 30,
+      "recall_at_k": 0.96,
+      "mrr": 0.743,
+      "found": 24,
+      "answerable": 25,
+      "per_question": {
+        "q001": 1,
+        "q002": 1,
+        "q003": 1,
+        "q004": 3,
+        "q005": 2,
+        "q006": 5,
+        "q007": 1,
+        "q008": 2,
+        "q009": 2,
+        "q011": 1,
+        "q012": 1,
+        "q013": 5,
+        "q014": 1,
+        "q015": 1,
+        "q016": 1,
+        "q017": 3,
+        "q018": 1,
+        "q019": 1,
+        "q020": 1,
+        "q021": 1,
+        "q022": 2,
+        "q023": 1,
+        "q024": null,
+        "q025": 2,
+        "q026": 1
+      },
+      "per_tag": {
+        "conceptual": {
+          "found": 2,
+          "total": 2
+        },
+        "distractors": {
+          "found": 3,
+          "total": 3
+        },
+        "false-premise": {
+          "found": 1,
+          "total": 1
+        },
+        "live": {
+          "found": 1,
+          "total": 2
+        },
+        "many-related-docs": {
+          "found": 1,
+          "total": 1
+        },
+        "negation": {
+          "found": 1,
+          "total": 1
+        },
+        "no-exact-keyword": {
+          "found": 4,
+          "total": 5
+        },
+        "no-product-name": {
+          "found": 3,
+          "total": 3
+        },
+        "paraphrased": {
+          "found": 16,
+          "total": 16
+        },
+        "personal-note": {
+          "found": 6,
+          "total": 6
+        },
+        "repo": {
+          "found": 1,
+          "total": 1
+        },
+        "similar-docs": {
+          "found": 1,
+          "total": 1
+        },
+        "task": {
+          "found": 1,
+          "total": 2
+        }
+      }
     }
   ],
   "answers": [
@@ -702,6 +795,49 @@
         "no-product-name": "1/3",
         "paraphrased": "7/16",
         "personal-note": "5/6",
+        "repo": "1/1",
+        "similar-docs": "1/1",
+        "task": "0/2"
+      }
+    },
+    {
+      "name": "2026-09-30-temp01",
+      "date": "2026-09-30",
+      "grader_model": "ollama:qwen3:8b|v2.2",
+      "answered": 30,
+      "malformed": 0,
+      "traps_refused": 5,
+      "traps": 5,
+      "refused_despite_retrieval": 2,
+      "used_a_tool": 0,
+      "median_seconds": 9.9,
+      "median_prompt_tokens": 1221.0,
+      "total_load_seconds": 3.1,
+      "grader": "ai_grade",
+      "graded": 30,
+      "grades": {
+        "partial": 5,
+        "correct": 17,
+        "wrong": 4,
+        "refused": 3,
+        "hallucinated": 1
+      },
+      "correct": 12,
+      "graded_answerable": 25,
+      "traps_correct": 5,
+      "generation_failures": 12,
+      "retrieval_failures": 1,
+      "correct_by_tag": {
+        "conceptual": "1/2",
+        "distractors": "3/3",
+        "false-premise": "0/1",
+        "live": "0/2",
+        "many-related-docs": "0/1",
+        "negation": "0/1",
+        "no-exact-keyword": "3/5",
+        "no-product-name": "1/3",
+        "paraphrased": "6/16",
+        "personal-note": "6/6",
         "repo": "1/1",
         "similar-docs": "1/1",
         "task": "0/2"
