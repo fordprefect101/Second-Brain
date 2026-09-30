@@ -73,6 +73,7 @@ THINK_BLOCK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 # over and 8 more left no room to answer — which is why notes are now read by
 # their best section (ADR-011). The fallback below still reads whole notes.
 NUM_CTX = 8192
+TEMPERATURE = 0.1
 
 # Warn when a prompt reaches this share of the window (see _chat).
 OVERFLOW_WARNING = 0.9
@@ -232,7 +233,7 @@ def _chat(
         "model": model,
         "messages": messages,
         "stream": False,
-        "options": {"num_ctx": NUM_CTX},
+        "options": {"num_ctx": NUM_CTX, "temperature": TEMPERATURE},
     }
     if tools:
         payload["tools"] = tools
