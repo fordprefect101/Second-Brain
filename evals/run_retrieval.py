@@ -42,6 +42,7 @@ from psycopg.rows import dict_row
 from api.assistant import SEARCH_LIMIT
 from api.database import connect
 from api.hybrid import retrieve
+from evals.metrics import first_hit_rank, mrr, recall_at_k
 
 HERE = Path(__file__).resolve().parent
 DATASET = HERE / "dataset.jsonl"
@@ -108,10 +109,7 @@ def evaluate(
         hits = retrieve(conn, row["question"], limit=k, mode=mode).hits
         refs = _refs_for(conn, [h.id for h in hits])
         result.top = [h.title for h in hits]
-        result.rank = next(
-            (i for i, h in enumerate(hits, start=1) if refs.get(h.id) in expected),
-            None,
-        )
+        result.rank = first_hit_rank([refs.get(h.id) for h in hits], expected)
         results.append(result)
 
     return results
@@ -124,8 +122,8 @@ def _scored(results: list[Result]) -> list[Result]:
 
 def summarize(results: list[Result]) -> dict:
     scored = _scored(results)
+    ranks = [r.rank for r in scored]
     found = [r for r in scored if r.rank is not None]
-    n = len(scored) or 1  # an empty dataset scores 0 rather than dividing by zero
 
     per_tag: dict[str, dict[str, int]] = {}
     for r in scored:
@@ -135,8 +133,8 @@ def summarize(results: list[Result]) -> dict:
             bucket["found"] += r.rank is not None
 
     return {
-        "recall_at_k": round(len(found) / n, 3),
-        "mrr": round(sum(1 / r.rank for r in found) / n, 3),
+        "recall_at_k": round(recall_at_k(ranks), 3),
+        "mrr": round(mrr(ranks), 3),
         "found": len(found),
         "answerable": len(scored),
         "per_question": {r.id: r.rank for r in scored},
