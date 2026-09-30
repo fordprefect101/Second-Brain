@@ -58,6 +58,10 @@ from evals.run_retrieval import BASELINES
 # v2.2: sentences that state no fact (a bare refusal, a lead-in ending in a colon) are
 # skipped by code: qwen3 was calling "I don't have anything on that." unsupported.
 VERSION = "v2.2"
+# The grader baselines use (ADR-014, revised 2026-09-30): best agreement of the three
+# tried, and the same grade on all 120 answers when graded twice.
+OFFICIAL_BACKEND = "ollama:qwen3:8b"
+GATE = 0.85  # correct-vs-not agreement with the answer key before a grader is trusted
 HERE = Path(__file__).resolve().parent
 CACHE = HERE / "answers" / ".grader_cache.jsonl"
 VALIDATION_RUNS = [
@@ -437,6 +441,17 @@ def grade_run(checker: Checker, name: str, force: bool = False) -> None:
                   f"{time.time() - started:5.1f}s  (key: {record.get('grade')})")
 
 
+def is_validated(grader_id: str) -> bool:
+    """Its latest validation passed the gate and caught every known failure but at
+    most one (q016 is missed by all three graders tried)."""
+    data = json.loads(BASELINES.read_text(encoding="utf-8"))
+    runs = [v for v in data.get("grader_v2_validation", []) if v["grader"] == grader_id]
+    if not runs:
+        return False
+    caught, total = map(int, runs[-1]["known_failures_caught"].split("/"))
+    return runs[-1]["agree"] >= GATE and caught >= total - 1
+
+
 def validate(backend_spec: str, runs: list[str], budget_tokens: int | None) -> int:
     backend = make_backend(backend_spec)
     checker = Checker(backend, CheckCache(), budget_tokens=budget_tokens)
@@ -502,7 +517,7 @@ def main() -> int:
     v.add_argument("--budget-tokens", type=int, help="stop before exceeding this many tokens")
     g = sub.add_parser("grade", help="grade one run")
     g.add_argument("name")
-    g.add_argument("--backend", required=True)
+    g.add_argument("--backend", default=OFFICIAL_BACKEND)
     g.add_argument("--force", action="store_true")
     args = parser.parse_args()
     try:

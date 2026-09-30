@@ -777,6 +777,63 @@
       "cached": 35,
       "tokens": 359912,
       "minutes": 35.6
+    },
+    {
+      "date": "2026-09-30",
+      "grader": "ollama:qwen3:8b|v2.2",
+      "runs": [
+        "hybrid-2026-09-28",
+        "no-tools-2026-09-29",
+        "qwen3-no-tools-2026-09-29",
+        "llama-3sections-2026-09-29"
+      ],
+      "n": 120,
+      "exact": 0.658,
+      "agree": 0.867,
+      "kappa": 0.734,
+      "known_failures_caught": "7/8",
+      "model_calls": 447,
+      "cached": 11,
+      "tokens": 351016,
+      "minutes": 416.0
+    },
+    {
+      "date": "2026-09-30",
+      "grader": "ollama:llama3.1:8b|v2.2",
+      "runs": [
+        "hybrid-2026-09-28",
+        "no-tools-2026-09-29",
+        "qwen3-no-tools-2026-09-29",
+        "llama-3sections-2026-09-29"
+      ],
+      "n": 120,
+      "exact": 0.517,
+      "agree": 0.808,
+      "kappa": 0.626,
+      "known_failures_caught": "7/8",
+      "model_calls": 115,
+      "cached": 10,
+      "tokens": 91328,
+      "minutes": 6.6
+    },
+    {
+      "date": "2026-09-30",
+      "grader": "openai:gpt-4.1-nano|v2.2",
+      "runs": [
+        "hybrid-2026-09-28",
+        "no-tools-2026-09-29",
+        "qwen3-no-tools-2026-09-29",
+        "llama-3sections-2026-09-29"
+      ],
+      "n": 120,
+      "exact": 0.517,
+      "agree": 0.817,
+      "kappa": 0.641,
+      "known_failures_caught": "5/8",
+      "model_calls": 391,
+      "cached": 11,
+      "tokens": 313933,
+      "minutes": 5.8
     }
   ]
 }

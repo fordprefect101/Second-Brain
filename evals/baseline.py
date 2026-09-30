@@ -10,8 +10,9 @@ it is. Results are saved under NAME in evals/baselines.json, answers in
 evals/answers/NAME.jsonl. It stops at the first step that fails, rather than
 measuring something other than what it claims to.
 
-The grades come from the AI grader (ADR-014), which is trusted only once
-`python -m evals.judge validate` has passed its gate; until then the output says so.
+The grades come from grader v2 on local qwen3 (ADR-014): free, nothing leaves the
+machine, and trusted because `python -m evals.grader_v2 validate` passed its gate. A
+different grader can be picked with --grader; if it has not passed, the output says so.
 """
 
 from __future__ import annotations
@@ -28,7 +29,8 @@ from psycopg.rows import dict_row
 from api.assistant import SEARCH_LIMIT
 from api.database import connect
 from api.search_routes import run_reindex
-from evals import judge, run_answers, run_retrieval
+from evals import grader_v2, run_answers, run_retrieval
+from evals.judge import GraderUnavailable
 from evals.run_retrieval import BASELINES
 
 
@@ -86,22 +88,29 @@ def answers(name: str) -> bool:
     return run_answers.run(name, None) == 0
 
 
-def grade(name: str) -> None:
-    step(f"4. AI grades ({judge.MODEL})")
-    judge.grade_run(name)
-    summary = run_answers.summarize(run_answers.load_records(name), "ai_grade")
+def grade(name: str, backend: str) -> None:
+    checker = grader_v2.Checker(grader_v2.make_backend(backend), grader_v2.CheckCache())
+    grader_id = f"{checker.backend.name}|{grader_v2.VERSION}"
+    step(f"4. AI grades ({grader_id})")
+    grader_v2.grade_run(checker, name)
+
+    # The summary reads one grade field; the grader's grades live under its id, so
+    # they are copied across for counting only (never saved as "ai_grade").
+    records = run_answers.load_records(name)
+    for record in records:
+        record["ai_grade"] = record["graders"][grader_id]["grade"]
+    summary = run_answers.summarize(records, "ai_grade")
     run_answers.print_summary(summary)
 
     data = json.loads(BASELINES.read_text(encoding="utf-8"))
     data.setdefault("answers", []).append(
-        {"name": name, "date": date.today().isoformat(), "grader_model": judge.MODEL, **summary}
+        {"name": name, "date": date.today().isoformat(), "grader_model": grader_id, **summary}
     )
     BASELINES.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
-    validations = [v for v in data.get("grader_validation", []) if v["model"] == judge.MODEL]
-    if not validations or not validations[-1]["passed"]:
-        print(f"\n  NOTE: {judge.MODEL} has not passed validation (ADR-014). Treat these "
-              "grades as provisional: python -m evals.judge validate <graded runs>")
+    if not grader_v2.is_validated(grader_id):
+        print(f"\n  NOTE: {grader_id} has not passed validation (ADR-014). Treat these "
+              f"grades as provisional: python -m evals.grader_v2 validate --backend {backend}")
 
 
 def main() -> int:
@@ -109,6 +118,8 @@ def main() -> int:
     parser.add_argument("name", help="a name for this baseline, e.g. 2026-10-01")
     parser.add_argument("--retrieval-only", action="store_true")
     parser.add_argument("--no-grade", action="store_true")
+    parser.add_argument("--grader", default=grader_v2.OFFICIAL_BACKEND,
+                        help="ollama:<model> or openai:<model> (default: %(default)s)")
     args = parser.parse_args()
 
     keep_awake()
@@ -120,13 +131,13 @@ def main() -> int:
     if not answers(args.name):
         return 1
     if args.no_grade:
-        print(f"\nAnswers recorded. Grade later: python -m evals.judge grade {args.name}")
+        print(f"\nAnswers recorded. Grade later: python -m evals.grader_v2 grade {args.name}")
         return 0
     try:
-        grade(args.name)
-    except judge.GraderUnavailable as exc:
+        grade(args.name, args.grader)
+    except GraderUnavailable as exc:
         print(f"\n  Grading skipped: {exc}\n  Answers are saved; grade later with "
-              f"python -m evals.judge grade {args.name}")
+              f"python -m evals.grader_v2 grade {args.name}")
         return 1
     return 0
 
