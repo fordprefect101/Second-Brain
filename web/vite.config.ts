@@ -9,6 +9,9 @@ export default defineConfig({
     // spend twenty minutes at step 5.
     port: 5173,
     strictPort: true,
+    // IPv4 explicitly: "localhost" alone bound only ::1 on macOS, and
+    // `tailscale serve` forwards to 127.0.0.1 — the phone got a 502.
+    host: '127.0.0.1',
     // The phone reaches this server through `tailscale serve`, which only devices
     // on my own tailnet can use; Vite refuses hostnames it was not told about.
     allowedHosts: ['.ts.net'],
