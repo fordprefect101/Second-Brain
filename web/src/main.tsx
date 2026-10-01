@@ -32,6 +32,12 @@ const router = createBrowserRouter([
       { path: '/settings', element: <Settings /> },
 
       { path: '/projects', element: <Projects /> },
+      {
+        // Loaded on first visit: the graph library is most of the app's size, and
+        // a phone should not download it to show the dashboard.
+        path: '/graph',
+        lazy: async () => ({ Component: (await import('./pages/Graph')).Graph }),
+      },
 
       // Areas, Resources, Ideas and Goals lived here as stubs while the
       // information architecture was being tested by clicking it. Removed once

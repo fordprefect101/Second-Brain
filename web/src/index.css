@@ -2437,3 +2437,56 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---- Graph (pages/Graph.tsx) ------------------------------------------------ */
+
+.graph-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+  color: var(--text-muted);
+  font-size: var(--fs-1);
+}
+
+/* The canvas fills this box. Tall enough to explore, short enough on a phone to
+   leave the selected-note card visible beneath it. */
+.graph-box {
+  height: min(65vh, 640px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-sunken);
+  touch-action: none; /* pinch and drag belong to the graph, not the page */
+}
+
+.graph-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.graph-card-title {
+  margin: 0;
+  font-size: var(--fs-3);
+  font-weight: 500;
+}
+
+.graph-card-meta {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-0);
+}
+
+.graph-card-open {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: var(--fs-2);
+  font-weight: 500;
+}

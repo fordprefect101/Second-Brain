@@ -11,6 +11,7 @@ Notion in Phase 4 means writing a provider and changing that function.
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -24,6 +25,7 @@ from pydantic import BaseModel
 from api.captures import ConnDep
 from api.config import config
 from api.entities import lookup_provider_id, resolve_ids
+from api.graph import build_graph
 from api.providers.obsidian import ObsidianVaultProvider
 from api.services import NoteService
 
@@ -111,6 +113,45 @@ def list_notes(
         )
         for n in provider_notes
     ]
+
+
+class GraphNode(CamelModel):
+    id: UUID
+    title: str
+    links: int  # lines touching this note, either direction: sets its dot size
+
+
+class GraphEdge(CamelModel):
+    source: UUID
+    target: UUID
+
+
+class NoteGraph(CamelModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    unresolved: int
+
+
+# Declared before /{note_id}: FastAPI tries routes in order.
+@router.get("/graph", response_model=NoteGraph)
+def note_graph(service: ServiceDep, conn: ConnDep) -> NoteGraph:
+    """Every note, and every [[link]] between two of them (api/graph.py)."""
+    graph = build_graph(service.list_notes(limit=10_000, with_body=True))
+    ids = resolve_ids(
+        conn,
+        provider=service.source_id,
+        entity_type="note",
+        provider_ids=[n.provider_id for n in graph.nodes],
+    )
+    degree = Counter(end for edge in graph.edges for end in edge)
+    return NoteGraph(
+        nodes=[
+            GraphNode(id=ids[n.provider_id], title=n.title, links=degree[n.provider_id])
+            for n in graph.nodes
+        ],
+        edges=[GraphEdge(source=ids[a], target=ids[b]) for a, b in graph.edges],
+        unresolved=graph.unresolved,
+    )
 
 
 @router.get("/{note_id}", response_model=NoteDetail)

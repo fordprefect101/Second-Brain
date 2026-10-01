@@ -58,6 +58,9 @@ export function TopBar() {
         <Segmented label="Density" options={DENSITIES} value={density} onChange={setDensity} />
         <Segmented label="Theme" options={THEMES} value={theme} onChange={setTheme} />
 
+        <Link to="/graph" className="topbar-link">
+          Graph
+        </Link>
         <Link to="/settings" className="topbar-link">
           Settings
         </Link>
