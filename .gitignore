@@ -49,6 +49,8 @@ pgdata/
 # stay ignored too.
 *.md
 !/README.md
+# Published so the M1 home server gets it with a clone.
+!/docs/m1-setup.md
 
 # ---- Editor / OS ----
 .DS_Store
