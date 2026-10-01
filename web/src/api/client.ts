@@ -13,7 +13,9 @@
  *   - no retry, no request cancellation on unmount
  */
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+// Through the dev server's /api proxy (vite.config.ts), so the same page works on
+// the Mac and on the phone over Tailscale.
+const BASE_URL = import.meta.env.VITE_API_URL ?? '/api';
 
 export class ApiError extends Error {
   constructor(

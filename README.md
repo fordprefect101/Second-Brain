@@ -141,6 +141,19 @@ cd web && npm run dev                       # UI on :5173
 docker compose stop                         # stop the database, keeping data
 ```
 
+### Always on, and on my phone
+
+`scripts/autostart.sh on` starts the API and the UI at every login and restarts them if
+they stop (`off` undoes it, `status` checks; logs in `.local/logs/`). Docker Desktop,
+Ollama (`brew services start ollama`) and Tailscale are set to start at login too, so a
+restart needs no hands. While the lid is closed the Mac sleeps and is unreachable; on
+wake everything is already running.
+
+The phone reaches the UI through Tailscale, a private network of my own devices:
+`tailscale serve --bg 5173` gives it an `https://….ts.net` address that nothing outside
+that network can open. The servers themselves still listen only on the Mac; the UI calls
+the API through its `/api` proxy (`web/vite.config.ts`), so one address serves both.
+
 ### Troubleshooting
 
 **`DatabaseUnavailable: Cannot reach Postgres…`** — the container isn't running.

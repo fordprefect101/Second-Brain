@@ -87,7 +87,9 @@ export function createTask(
   return api.post<Task>('/tasks', { listId, title, notes });
 }
 
-/** Full-page redirect, not fetch: the user must see and interact with Google. */
+/** Full-page redirect, not fetch: the user must see and interact with Google.
+ * Straight to :8000, not the /api proxy: Google sends the user back to the
+ * localhost address registered for the app, so connecting works on the Mac only. */
 export function startGoogleConnect(): void {
   const base = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
   window.location.href = `${base}/google/connect`;
