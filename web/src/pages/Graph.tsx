@@ -12,6 +12,8 @@ import { ApiError } from '../api/client';
  * graph — unlike the backlog's 3D project graph, where it is ruled out, because
  * there the third dimension has to mean something.
  *
+ * Two ways in: /graph inside the app, and /graph/full, the whole screen with
+ * nothing else on it — what a phone needs to explore anything at all.
  * Touch: drag to move, pinch to zoom, tap a dot to select it.
  */
 
@@ -20,9 +22,24 @@ function token(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+// Grows slowly with links: the busiest note (22) is about 3x an unlinked one.
+function radius(links: number): number {
+  return 2.5 + 1.5 * Math.sqrt(links);
+}
+
 type DrawNode = GraphNode & { x?: number; y?: number };
 
+/** The page inside the app. */
 export function Graph() {
+  return <GraphView full={false} />;
+}
+
+/** The whole screen. Opened in a new tab, so closing it returns to the app. */
+export function GraphFull() {
+  return <GraphView full />;
+}
+
+function GraphView({ full }: { full: boolean }) {
   const [graph, setGraph] = useState<NoteGraph | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<DrawNode | null>(null);
@@ -73,28 +90,44 @@ export function Graph() {
   }, [selected, graph]);
 
   const linked = graph ? graph.nodes.filter((n) => n.links > 0).length : 0;
+  const summary = graph
+    ? `${graph.nodes.length} notes · ${graph.edges.length} links · ${graph.nodes.length - linked} unlinked`
+    : 'Reading vault…';
+
+  const toggle = (
+    <label className="graph-toggle">
+      <input
+        type="checkbox"
+        checked={showUnlinked}
+        onChange={(e) => setShowUnlinked(e.target.checked)}
+      />
+      Show notes with no links
+    </label>
+  );
 
   return (
-    <>
-      <header className="page-header">
-        <h1>Graph</h1>
-        <p className="page-subtitle">
-          {graph
-            ? `${graph.nodes.length} notes · ${graph.edges.length} links · ${graph.nodes.length - linked} unlinked`
-            : 'Reading vault…'}
-        </p>
-      </header>
+    <div className={full ? 'graph-full' : undefined}>
+      {full ? (
+        <div className="graph-full-bar">
+          <span className="graph-full-summary">{summary}</span>
+          {toggle}
+        </div>
+      ) : (
+        <>
+          <header className="page-header">
+            <h1>Graph</h1>
+            <p className="page-subtitle">{summary}</p>
+          </header>
+          <div className="graph-controls">
+            {toggle}
+            <a href="/graph/full" target="_blank" rel="noopener" className="graph-card-open">
+              Full screen ↗
+            </a>
+          </div>
+        </>
+      )}
 
       {error && <p className="banner is-error">{error}</p>}
-
-      <label className="graph-toggle">
-        <input
-          type="checkbox"
-          checked={showUnlinked}
-          onChange={(e) => setShowUnlinked(e.target.checked)}
-        />
-        Show notes with no links
-      </label>
 
       <div className="graph-box" ref={box}>
         {graph && size.width > 0 && (
@@ -103,8 +136,8 @@ export function Graph() {
             width={size.width}
             height={size.height}
             nodeId="id"
-            nodeVal={(n: DrawNode) => 1 + n.links}
-            nodeRelSize={4}
+            nodeVal={(n: DrawNode) => radius(n.links) ** 2}
+            nodeRelSize={1}
             cooldownTicks={120}
             onNodeClick={(n: DrawNode) => setSelected(n)}
             onBackgroundClick={() => setSelected(null)}
@@ -114,28 +147,29 @@ export function Graph() {
               return lit ? token('--border-strong') : token('--border');
             }}
             nodeCanvasObject={(n: DrawNode, ctx: CanvasRenderingContext2D, scale: number) => {
-              const radius = 4 * Math.sqrt(1 + n.links);
+              const r = radius(n.links);
               const faded = selected !== null && !neighbours.has(n.id);
               ctx.globalAlpha = faded ? 0.25 : 1;
               ctx.beginPath();
-              ctx.arc(n.x ?? 0, n.y ?? 0, radius, 0, 2 * Math.PI);
+              ctx.arc(n.x ?? 0, n.y ?? 0, r, 0, 2 * Math.PI);
               ctx.fillStyle = n.id === selected?.id ? token('--accent') : token('--text-muted');
               ctx.fill();
               // Names only where they can be read: big notes, the selection, or zoomed in.
               if (scale > 1.6 || n.links >= 8 || neighbours.has(n.id)) {
-                ctx.font = `${12 / scale}px Inter, sans-serif`;
+                ctx.font = `${11 / scale}px Inter, sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'top';
                 ctx.fillStyle = token('--text');
-                ctx.fillText(n.title, n.x ?? 0, (n.y ?? 0) + radius + 2 / scale);
+                ctx.fillText(n.title, n.x ?? 0, (n.y ?? 0) + r + 2 / scale);
               }
               ctx.globalAlpha = 1;
             }}
             nodePointerAreaPaint={(n: DrawNode, colour: string, ctx: CanvasRenderingContext2D) => {
-              // A generous tap target: a fingertip is wider than a small dot.
+              // The tap target stays generous while the dot shrinks: a fingertip is
+              // wider than a small dot.
               ctx.fillStyle = colour;
               ctx.beginPath();
-              ctx.arc(n.x ?? 0, n.y ?? 0, 4 * Math.sqrt(1 + n.links) + 6, 0, 2 * Math.PI);
+              ctx.arc(n.x ?? 0, n.y ?? 0, radius(n.links) + 8, 0, 2 * Math.PI);
               ctx.fill();
             }}
           />
@@ -155,6 +189,6 @@ export function Graph() {
           </Link>
         </div>
       )}
-    </>
+    </div>
   );
 }

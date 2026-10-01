@@ -2490,3 +2490,57 @@ body {
   font-size: var(--fs-2);
   font-weight: 500;
 }
+
+.graph-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+/* /graph/full: the graph is the whole screen; the bar and the card float on it.
+   dvh, not vh: on phones vh includes the area behind the browser's toolbars. */
+.graph-full {
+  position: fixed;
+  inset: 0;
+  background: var(--surface-sunken);
+}
+
+.graph-full .graph-box {
+  height: 100dvh;
+  border: none;
+  border-radius: 0;
+}
+
+.graph-full-bar {
+  position: absolute;
+  top: var(--sp-3);
+  left: var(--sp-4);
+  right: var(--sp-4);
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2) var(--sp-4);
+  pointer-events: none; /* drags pass through to the graph... */
+}
+
+.graph-full-bar label {
+  pointer-events: auto; /* ...except on the checkbox */
+  margin: 0;
+}
+
+.graph-full-summary {
+  color: var(--text-muted);
+  font-size: var(--fs-0);
+}
+
+.graph-full .graph-card {
+  position: absolute;
+  left: var(--sp-4);
+  right: var(--sp-4);
+  bottom: calc(var(--sp-5) + env(safe-area-inset-bottom));
+  margin: 0;
+  box-shadow: var(--elev-2);
+}

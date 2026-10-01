@@ -20,6 +20,11 @@ import './index.css';
  */
 const router = createBrowserRouter([
   {
+    // Outside the App layout: no top bar, no dashboard underneath, the graph alone.
+    path: '/graph/full',
+    lazy: async () => ({ Component: (await import('./pages/Graph')).GraphFull }),
+  },
+  {
     element: <App />,
     children: [
       // No route for '/'. App renders the grid unconditionally, so the index is

@@ -58,7 +58,18 @@ export function TopBar() {
         <Segmented label="Density" options={DENSITIES} value={density} onChange={setDensity} />
         <Segmented label="Theme" options={THEMES} value={theme} onChange={setTheme} />
 
-        <Link to="/graph" className="topbar-link">
+        <Link
+          to="/graph"
+          className="topbar-link"
+          onClick={(event) => {
+            // A phone screen is too small for the graph inside the app: open the
+            // full-screen version in its own tab instead.
+            if (window.matchMedia('(max-width: 720px)').matches) {
+              event.preventDefault();
+              window.open('/graph/full', '_blank', 'noopener');
+            }
+          }}
+        >
           Graph
         </Link>
         <Link to="/settings" className="topbar-link">
