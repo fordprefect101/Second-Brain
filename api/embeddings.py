@@ -1,4 +1,4 @@
-"""Text -> vectors, via nomic-embed-text on the local Ollama (ADR-012).
+"""Text -> vectors, via nomic-embed-text on Ollama (ADR-012), local or on the M4.
 
 The only file that knows the model, its URL, its size and its prefixes. Swapping the
 embedding model means changing this file and letting the next reindex re-embed —
@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import httpx
 
-OLLAMA_EMBED_URL = "http://localhost:11434/api/embed"
+from api.config import config
+
+OLLAMA_EMBED_URL = f"{config.ollama_url}/api/embed"
 MODEL = "nomic-embed-text"
 DIMENSIONS = 768  # must match vector(768) in schema.sql
 
@@ -25,6 +27,9 @@ QUERY_PREFIX = "search_query: "
 
 BATCH = 32  # texts per request: one request per text is dozens of round trips
 TIMEOUT = 300.0
+# Ollama may be on another machine that is asleep. Without this, a search would wait
+# the full TIMEOUT to connect before falling back to keyword-only.
+CONNECT_TIMEOUT = 3.0
 
 
 class EmbeddingsUnavailable(RuntimeError):
@@ -50,11 +55,12 @@ def _embed(inputs: list[str]) -> list[list[float]]:
             response = httpx.post(
                 OLLAMA_EMBED_URL,
                 json={"model": MODEL, "input": batch, "truncate": False},
-                timeout=TIMEOUT,
+                timeout=httpx.Timeout(TIMEOUT, connect=CONNECT_TIMEOUT),
             )
-        except httpx.ConnectError as exc:
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             raise EmbeddingsUnavailable(
-                "Ollama is not running. Start it with `ollama serve`."
+                f"Ollama is not reachable at {config.ollama_url}. Check that the "
+                "machine running it is awake and `ollama serve` is running."
             ) from exc
         except httpx.HTTPError as exc:
             raise EmbeddingsUnavailable(f"Embedding request failed: {exc}") from exc

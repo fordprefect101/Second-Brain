@@ -46,6 +46,7 @@ from uuid import UUID
 import httpx
 import psycopg
 
+from api.config import config
 from api.entities import lookup_provider_id
 from api.hybrid import TOP_NOTE_SECTIONS, retrieve
 from api.search import SearchHit
@@ -53,7 +54,7 @@ from api.services import NoteService
 
 logger = logging.getLogger("personal-os.assistant")
 
-OLLAMA_URL = "http://localhost:11434/api/chat"
+OLLAMA_URL = f"{config.ollama_url}/api/chat"
 MODEL = "llama3.1:8b"
 
 # Models with a "thinking" mode write out their reasoning before answering —
@@ -90,6 +91,8 @@ FULL_TEXT_LIMIT = 2
 MAX_TURNS = 4
 
 REQUEST_TIMEOUT = 180.0
+# The model may be on another machine that is asleep: say so in seconds, not minutes.
+CONNECT_TIMEOUT = 3.0
 
 
 class AssistantUnavailable(RuntimeError):
@@ -241,12 +244,16 @@ def _chat(
         payload["think"] = False
 
     try:
-        response = httpx.post(OLLAMA_URL, json=payload, timeout=REQUEST_TIMEOUT)
+        response = httpx.post(
+            OLLAMA_URL,
+            json=payload,
+            timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=CONNECT_TIMEOUT),
+        )
         response.raise_for_status()
-    except httpx.ConnectError as exc:
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
         raise AssistantUnavailable(
-            "The local model is not running. Start it with `ollama serve`, "
-            f"and check that {model} is pulled."
+            f"The model is not reachable at {config.ollama_url}. Check that the machine "
+            f"running Ollama is awake, Ollama is running, and {model} is pulled."
         ) from exc
     except httpx.HTTPError as exc:
         raise AssistantUnavailable(f"The local model failed: {exc}") from exc

@@ -31,6 +31,10 @@ class Config:
     # return 503 with an actionable message instead.
     vault_path: Path | None = None
 
+    # Where Ollama runs, for both answers and search embeddings. Localhost on the M4;
+    # on the M1 home server it points at the M4 over Tailscale (docs/m1-setup.md).
+    ollama_url: str = "http://localhost:11434"
+
     # The Vite dev server. Narrow by default: this app is local-only and
     # single-user (Plan.md §22 — least privilege applies to CORS too).
     cors_origins: list[str] = field(
@@ -73,7 +77,9 @@ def load_config() -> Config:
     raw_vault = os.getenv("OBSIDIAN_VAULT_PATH", "").strip()
     vault_path = Path(raw_vault).expanduser() if raw_vault else None
 
-    return Config(database_url=database_url, vault_path=vault_path)
+    ollama_url = os.getenv("OLLAMA_URL", "").strip().rstrip("/") or Config.ollama_url
+
+    return Config(database_url=database_url, vault_path=vault_path, ollama_url=ollama_url)
 
 
 config = load_config()
