@@ -22,7 +22,7 @@ from pydantic import ConfigDict
 from pydantic.alias_generators import to_camel
 from pydantic import BaseModel, Field
 
-from api import note_writes, tags as tag_rules
+from api import link_rules, note_writes, tags as tag_rules
 from api.captures import ConnDep
 from api.config import config
 from api.entities import lookup_provider_id, resolve_ids
@@ -153,6 +153,16 @@ def note_graph(service: ServiceDep, conn: ConnDep) -> NoteGraph:
         edges=[GraphEdge(source=ids[a], target=ids[b]) for a, b in graph.edges],
         unresolved=graph.unresolved,
     )
+
+
+@router.get("/graph/problems", response_model=list[str])
+def note_graph_problems(service: ServiceDep) -> list[str]:
+    """Every link in the vault that breaks the graph's rules (api/link_rules.py).
+
+    Writes through this API are refused before they can break one; this is for
+    notes edited by hand in Obsidian, which nothing here can stop.
+    """
+    return link_rules.problems(service.list_notes(limit=10_000, with_body=True))
 
 
 @router.get("/{note_id}", response_model=NoteDetail)

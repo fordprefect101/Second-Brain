@@ -157,3 +157,24 @@ def test_project_page_carries_type_status_and_repos(db, provider, vault):
         '---\ntype: project\nstatus: "active"\nrepos:\n'
         '  - "fordprefect101/etsy-automation"\ntags: [project, etsy-automation]\n---\n'
     )
+
+
+def test_a_note_whose_links_break_the_graph_rules_is_refused(db, provider, vault):
+    write_note(vault, "Projects/Projects index.md", "[[Etsy Automation]]")
+    write_note(vault, "Projects/Etsy Automation.md", "x")
+
+    with pytest.raises(NoteWriteError, match="is an ADR and may link only to other ADRs"):
+        create(db, provider, body="Covers [[Etsy Automation]].")
+    assert not (vault / "Projects/Etsy Automation/ADR-001 Use Postgres.md").exists()
+
+    written = create(db, provider, body="Covers Etsy Automation.")
+    read = provider.get_note(written.provider_id)
+    with pytest.raises(NoteWriteError, match="without brackets"):
+        note_writes.update_note(
+            db,
+            provider,
+            written.entity_id,
+            body="Covers [[Etsy Automation]].",
+            base_modified_at=read.modified_at,
+        )
+    assert "Covers Etsy Automation." in (vault / written.provider_id).read_text()

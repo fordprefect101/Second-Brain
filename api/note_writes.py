@@ -11,6 +11,9 @@ as api/routing.py and for the same reason:
 The API owns the frontmatter. A caller sends a type, a project and topic tags; it
 never sends YAML. That is what keeps every note written this way findable the same
 way, and it is why a body that brings its own frontmatter is refused.
+
+A note whose [[links]] would break the shape of the note graph is refused too
+(api/link_rules.py), with the fix in the message.
 """
 
 from __future__ import annotations
@@ -23,10 +26,11 @@ from uuid import UUID
 
 import psycopg
 
-from api import embeddings, tags as tag_rules
+from api import embeddings, link_rules, tags as tag_rules
 from api.entities import lookup_provider_id, resolve_ids
 from api.providers.obsidian import ObsidianVaultProvider
 from api.search import index_notes
+from api.services import ProviderNote
 from api.vectors import embed_pending
 
 
@@ -110,6 +114,28 @@ def _frontmatter_block(raw: str) -> str:
     return raw[: end + 4] + "\n\n" if end != -1 else ""
 
 
+def _refuse_broken_links(
+    provider: ObsidianVaultProvider, provider_id: str, title: str, body: str
+) -> None:
+    """Judge this note's links as if it were already saved. Other notes are not judged."""
+    notes = [
+        n
+        for n in provider.list_notes(limit=10_000, with_body=True)
+        if n.provider_id != provider_id
+    ]
+    notes.append(
+        ProviderNote(
+            provider_id=provider_id,
+            title=title,
+            excerpt="",
+            modified_at=datetime.now().astimezone(),
+            body=body,
+        )
+    )
+    if broken := link_rules.problems(notes, only=provider_id):
+        raise NoteWriteError(" ".join(broken))
+
+
 def _reindex(conn: psycopg.Connection, provider: ObsidianVaultProvider) -> None:
     index_notes(conn, provider)
     conn.commit()
@@ -149,6 +175,10 @@ def create_note(
             f"A note named '{provider.safe_filename(title)}' already exists there. "
             "Update it instead, or choose another title."
         )
+    filename = provider.safe_filename(title)
+    _refuse_broken_links(
+        provider, f"{folder}/{filename}.md" if folder else f"{filename}.md", filename, body
+    )
 
     project_tag = tag_rules.slug(project) if project else None
     fixed = [note_type, *([project_tag] if project_tag else [])]
@@ -227,6 +257,7 @@ def update_note(
         )
     if body.lstrip().startswith("---"):
         raise NoteWriteError("Send the note text only; its frontmatter is kept as is.")
+    _refuse_broken_links(provider, provider_id, current.title, body)
 
     with conn.cursor() as cur:
         cur.execute(
