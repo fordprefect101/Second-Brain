@@ -20,8 +20,9 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import ConfigDict
 from pydantic.alias_generators import to_camel
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from api import note_writes, tags as tag_rules
 from api.captures import ConnDep
 from api.config import config
 from api.entities import lookup_provider_id, resolve_ids
@@ -183,4 +184,168 @@ def get_note(note_id: UUID, service: ServiceDep, conn: ConnDep) -> NoteDetail:
         modified_at=note.modified_at,
         source=service.source_id,
         body=note.body or "",
+    )
+
+
+# -- writes ----------------------------------------------------------------
+#
+# For notes filed from outside this app (docs/m1-setup.md). The logic, and why it
+# is ordered the way it is, lives in api/note_writes.py; these only translate.
+
+
+class NoteCreate(CamelModel):
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1)
+    type: str
+    project: str | None = Field(default=None, max_length=80)
+    tags: list[str] = Field(default_factory=list)
+    folder: str = ""
+    allow_new_tags: bool = False
+    # Project pages only (type "project").
+    status: str | None = Field(default=None, max_length=40)
+    repos: list[str] = Field(default_factory=list)
+
+
+class NoteUpdate(CamelModel):
+    body: str = Field(min_length=1)
+    # The modifiedAt the caller read; the write is refused if the file moved on.
+    base_modified_at: datetime
+
+
+class NoteWritten(CamelModel):
+    id: UUID
+    path: str
+    tags: list[str]
+    new_tags: list[str]
+
+
+class UndoResult(CamelModel):
+    id: UUID
+    result: str
+
+
+def _refuse(exc: Exception) -> HTTPException:
+    if isinstance(exc, note_writes.TagNeedsConfirmation):
+        return HTTPException(
+            status_code=409,
+            detail={
+                "message": str(exc),
+                "tag": exc.tag,
+                "similarTo": exc.similar.tag if exc.similar else None,
+                "checkedMeaning": exc.checked_meaning,
+            },
+        )
+    if isinstance(exc, OSError):
+        return HTTPException(status_code=500, detail=f"Could not write to the vault: {exc}")
+    return HTTPException(status_code=409, detail=str(exc))
+
+
+@router.post("", response_model=NoteWritten, status_code=201)
+def create_note(payload: NoteCreate, service: ServiceDep, conn: ConnDep) -> NoteWritten:
+    """File a new note in the vault. Reversible via /notes/{id}/undo."""
+    try:
+        written = note_writes.create_note(
+            conn,
+            service,
+            title=payload.title,
+            body=payload.body,
+            note_type=payload.type,
+            project=payload.project,
+            topics=payload.tags,
+            folder=payload.folder,
+            allow_new_tags=payload.allow_new_tags,
+            status=payload.status,
+            repos=payload.repos,
+        )
+    except (note_writes.NoteWriteError, ValueError, OSError) as exc:
+        raise _refuse(exc) from exc
+    return NoteWritten(
+        id=written.entity_id,
+        path=written.provider_id,
+        tags=written.tags,
+        new_tags=written.new_tags,
+    )
+
+
+@router.put("/{note_id}", response_model=NoteWritten)
+def update_note(
+    note_id: UUID, payload: NoteUpdate, service: ServiceDep, conn: ConnDep
+) -> NoteWritten:
+    """Replace a note's text, keeping its frontmatter. Reversible via undo."""
+    try:
+        written = note_writes.update_note(
+            conn,
+            service,
+            note_id,
+            body=payload.body,
+            base_modified_at=payload.base_modified_at,
+        )
+    except (note_writes.NoteWriteError, OSError) as exc:
+        raise _refuse(exc) from exc
+    return NoteWritten(
+        id=written.entity_id, path=written.provider_id, tags=written.tags, new_tags=[]
+    )
+
+
+@router.post("/{note_id}/undo", response_model=UndoResult)
+def undo_note_write(note_id: UUID, service: ServiceDep, conn: ConnDep) -> UndoResult:
+    """Reverse the latest API write to this note."""
+    try:
+        result = note_writes.undo_last_write(conn, service, note_id)
+    except (note_writes.NoteWriteError, OSError) as exc:
+        raise _refuse(exc) from exc
+    return UndoResult(id=note_id, result=result)
+
+
+# -- tags ------------------------------------------------------------------
+
+tags_router = APIRouter(prefix="/tags", tags=["tags"])
+
+
+class TagCount(CamelModel):
+    tag: str
+    notes: int
+
+
+class TagList(CamelModel):
+    types: list[str]
+    tags: list[TagCount]
+
+
+class TagSuggestRequest(CamelModel):
+    title: str = Field(min_length=1, max_length=120)
+    body: str = ""
+
+
+class TagSuggestion(CamelModel):
+    tag: str
+    score: float
+    by: str
+
+
+class TagSuggestions(CamelModel):
+    suggestions: list[TagSuggestion]
+    # False when the embedding model was unreachable and only words were matched.
+    checked_meaning: bool
+
+
+@tags_router.get("", response_model=TagList)
+def list_tags(service: ServiceDep) -> TagList:
+    """Every tag in the vault, most used first, and the fixed note types."""
+    counts = note_writes.vault_tags(service)
+    return TagList(
+        types=list(tag_rules.TYPE_TAGS),
+        tags=[TagCount(tag=t, notes=n) for t, n in counts.most_common()],
+    )
+
+
+@tags_router.post("/suggest", response_model=TagSuggestions)
+def suggest_tags(payload: TagSuggestRequest, service: ServiceDep) -> TagSuggestions:
+    """Existing tags that fit a note by meaning. Ask before creating the note."""
+    found, checked = tag_rules.suggest_for_note(
+        payload.title, payload.body, list(note_writes.vault_tags(service))
+    )
+    return TagSuggestions(
+        suggestions=[TagSuggestion(tag=s.tag, score=s.score, by=s.by) for s in found],
+        checked_meaning=checked,
     )

@@ -70,46 +70,53 @@ outside the vault. Nothing is ever hard-deleted.
 
 ### Moving the vault (M4, once)
 
-1. Install Google Drive for desktop on the M4 and sign in with the account the M1 will use.
+1. Install Google Drive for desktop on the M4 and sign in with the account the M1 uses.
 2. Quit Obsidian.
-3. **Copy** (don't move) the vault folder into Google Drive:
-   `~/Library/CloudStorage/GoogleDrive-<account>/My Drive/Vault/`. The copy must include the
-   hidden `.obsidian/` folder; Finder copies it along with the folder.
+3. **Copy** (don't move) the vault folder into `My Drive/Personal Vault/`.
 4. Wait until the Drive menu bar icon says everything is up to date.
 5. Rename the original on the M4 to `<name> (before move)` and stop opening it. It stays as
    a fallback until the M1 is checked, then can be deleted.
 6. On the M4: `scripts/autostart.sh off`, so its copy of the app stops indexing.
 
+`.obsidian/` did not come across through Drive. The API needs it to recognise the vault
+root, so an empty one was created on the M1; Obsidian on the M1 starts with default settings.
+
 ### On the M1
 
-- [ ] **Tailscale:** sign in (`tailscale up`, or the menu bar app). Same account as the M4 and phone.
-- [ ] **Docker Desktop:** `brew install --cask docker`. Open it once, then Settings:
-      Start at login on, Resources → Memory 2 GB.
-- [ ] **Google Drive:** `brew install --cask google-drive`, sign in. Right-click the vault
-      folder → **Available offline** (otherwise the API sees placeholders, not notes).
-      Allow `python3.14` access to Google Drive when macOS asks.
-- [ ] **`.env`:** copy `.env.example`, set a password, `OBSIDIAN_VAULT_PATH` to the vault
-      under `~/Library/CloudStorage/GoogleDrive-…/My Drive/…`, and `OLLAMA_URL`
-      to `http://<m4-tailscale-name>:11434`.
-- [ ] **Python and web:** `uv venv --python 3.14 && uv pip install -r api/requirements.txt`,
+- [x] **Tailscale:** `tailscale up`, same account as the M4 and phone. The M1 is `macbook-air-5`.
+- [x] **Docker Desktop:** `brew install --cask docker`. Settings: Start at login on,
+      Resources → Memory 2 GB.
+- [x] **Google Drive:** `brew install --cask google-drive`, sign in. Right-click
+      `Personal Vault` → **Available offline**.
+- [x] **`.env`:** password generated, `OBSIDIAN_VAULT_PATH` =
+      `~/Library/CloudStorage/GoogleDrive-<account>/My Drive/Personal Vault`,
+      `OLLAMA_URL=http://<m4 tailscale ip>:11434`.
+      **Port 5434**, not 5433: another project's Postgres already listens on 5433 here.
+- [x] **Python and web:** `uv venv --python 3.14 && uv pip install -r api/requirements.txt`,
       `cd web && npm install`.
-- [ ] **Database:** `docker compose up -d`, then restore the M4's dump (below).
-- [ ] **Always on:** `scripts/autostart.sh on`, `tailscale serve --bg 5173`.
-      Keep the lid open (a closed lid sleeps the Mac) and the charger in.
+- [x] **Database:** `docker compose up -d`. The first start left no `personalos` database
+      (cause not found); `docker exec personal-os-db createdb -U personalos personalos` fixed it.
+      Then the M4's dump was restored (below). A copy is kept in `.local/backups/`.
+- [x] **Always on:** `scripts/autostart.sh on`, `tailscale serve --bg 5173`
+      → `https://macbook-air-5.<tailnet>.ts.net`.
+- [ ] **Never sleep on the charger:** `sudo pmset -c sleep 0 displaysleep 10`. Keep the lid
+      open (a closed lid sleeps the Mac) and the charger in.
+- [ ] **Google and GitHub:** connect again from Settings. Their tokens were in the M4's
+      Keychain and don't move with the database.
 
 ### On the M4
 
-- [ ] **Ollama reachable from the M1:** `launchctl setenv OLLAMA_HOST 0.0.0.0` then restart
-      Ollama. Only devices on the Tailscale network or home Wi-Fi can reach it.
-      Both models pulled: `ollama pull llama3.1:8b`, `ollama pull nomic-embed-text`.
-- [ ] **Move the database:**
-      `docker exec personal-os-db pg_dump -U personalos -Fc personalos > personalos.dump`,
-      copy the file to the M1, then on the M1:
-      `docker exec -i personal-os-db pg_restore -U personalos -d personalos --clean --if-exists < personalos.dump`.
-      Check the inbox on the M1 before stopping the M4's database.
+- [x] **Ollama reachable from the M1, over Tailscale only:**
+      `tailscale serve --bg --tcp 11434 tcp://localhost:11434`. Ollama itself still listens
+      only on localhost, so nothing on the home Wi-Fi can reach it. Models:
+      `llama3.1:8b`, `nomic-embed-text`.
+- [x] **Move the database:**
+      `docker exec personal-os-db pg_dump -U personalos -Fc personalos > ~/Desktop/personalos.dump`,
+      copied to the M1 through Drive, then on the M1:
+      `docker exec -i personal-os-db pg_restore -U personalos -d personalos --clean --if-exists --no-owner < personalos.dump`.
 
-### Check
+### Check (2026-10-03)
 
-`curl -s localhost:8000/health` says ok; the phone opens the `ts.net` address; a search
-finds a note; a question gets an answer from the M4; the note count on the M1 matches the
-M4's original vault.
+Health ok; 43 notes read, matching the vault; search finds ADR-002 first for "why postgres
+over sqlite"; a question is answered by the M4 in about 30 s; 5 captures restored; the
+`ts.net` address serves the site and the API.

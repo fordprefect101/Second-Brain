@@ -29,6 +29,7 @@ from api.config import config
 from api.github_routes import router as github_router
 from api.google_routes import router as google_router
 from api.notes import router as notes_router
+from api.notes import tags_router
 from api.search_routes import router as search_router
 from api.database import DatabaseUnavailable, connect, ensure_schema, EXPECTED_TABLES, list_tables
 from api.search import hours_since_last_sync
@@ -127,6 +128,7 @@ app.add_middleware(
 
 app.include_router(captures_router)
 app.include_router(notes_router)
+app.include_router(tags_router)
 app.include_router(search_router)
 app.include_router(google_router)
 app.include_router(github_router)

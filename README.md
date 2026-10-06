@@ -180,10 +180,19 @@ docker compose up -d && .venv/bin/python api/database.py
 
 **Phase 0 complete** — discovery done, architecture decided.
 
-**Phase 1 in progress.** V1 is Capture + Today + Obsidian read-only; everything else is
-explicitly deferred. Obsidian is read-only until an undo mechanism exists — a bug in new
+**Phase 1 in progress.** V1 was Capture + Today + Obsidian read-only. A bug in new
 filesystem code writing to a personal knowledge vault is the highest-regret failure mode
-in this project.
+in this project, so writes waited for an undo mechanism and now go through one path only:
+snapshot, atomic write, record.
+
+**Writing notes.** `POST /notes` files a note (type, project, up to three topic tags; the
+API writes the frontmatter), `PUT /notes/{id}` replaces its text and refuses if the file
+changed since it was read, and `POST /notes/{id}/undo` reverses the last write — a
+created note moves to the vault's `.trash/`, never deleted. `GET /tags` lists the vault's
+tags and `POST /tags/suggest` returns the existing ones that fit a note by meaning. A tag
+that is not in the vault yet is refused unless confirmed, and the refusal names the
+nearest existing tag. Other repos file notes through these routes (the `vault-note`
+skill), since only the M1 edits the vault.
 
 | Step | | |
 |---|---|---|

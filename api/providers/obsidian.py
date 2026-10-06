@@ -256,6 +256,34 @@ class ObsidianVaultProvider:
         if path is not None:
             path.unlink(missing_ok=True)
 
+    def note_exists(self, title: str, folder: str = "") -> bool:
+        """Would create_note(title, folder) collide with a file already there?"""
+        directory = self.vault_root / folder if folder else self.vault_root
+        return (directory / f"{self.safe_filename(title)}.md").exists()
+
+    def trash_note(self, provider_id: str) -> str | None:
+        """Move a note into the vault's .trash/, Obsidian's own bin. Never deletes.
+
+        Undoing a create made through the API uses this rather than delete_note:
+        the file may have been edited since, and a moved file can be dragged back.
+        Returns the trashed file's vault-relative path, or None if it was not there.
+        """
+        path = self._resolve(provider_id)
+        if path is None:
+            return None
+
+        trash = self.vault_root / ".trash"
+        trash.mkdir(exist_ok=True)
+
+        target = trash / path.name
+        counter = 2
+        while target.exists():
+            target = trash / f"{path.stem} {counter}{path.suffix}"
+            counter += 1
+
+        os.replace(path, target)
+        return str(target.relative_to(self.vault_root))
+
     def read_raw(self, provider_id: str) -> str | None:
         """Exact file contents, for snapshotting before a write.
 
